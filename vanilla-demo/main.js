@@ -1,15 +1,15 @@
 import { createStore } from "@orchardapp/sdk";
 
-const store = createStore("state", { lastInteraction: null, count: 0 });
+const store = createStore("clicksData", { lastInteraction: null, count: 0 });
 
 const clicks = document.querySelector("#clicks");
 const lastInteraction = document.querySelector("#lastInteraction");
 const btn = document.querySelector("#btn");
 
-let currentState = { lastInteraction: null, count: 0 };
+let currentclicksData = { lastInteraction: null, count: 0 };
 
 store.subscribe((s) => {
-    currentState = s;
+    currentclicksData = s;
     const timePassed = Date.now() - (s.lastInteraction || Date.now());
     clicks.textContent = JSON.stringify(s.count, null, 2);
     lastInteraction.textContent = formatTime(timePassed);
@@ -20,7 +20,7 @@ btn.onclick = () => {
 };
 
 setInterval(() => {
-    const timePassed = Date.now() - (currentState.lastInteraction || Date.now());
+    const timePassed = Date.now() - (currentclicksData.lastInteraction || Date.now());
     lastInteraction.textContent = formatTime(timePassed);
 }, 500);
 
