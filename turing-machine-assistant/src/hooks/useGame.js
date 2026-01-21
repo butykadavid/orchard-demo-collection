@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 class Game {
-    constructor(n) {
+    constructor(gameId, n) {
+        this.gameId = gameId;
         this.rounds = [];
         this.currentRound = 0;
         this.validatorColumns = n;
@@ -33,6 +34,13 @@ class Game {
     getCurrentRound() {
         return this.rounds[this.currentRound];
     }
+
+    getCurrentScore() {
+        const rounds = this.rounds.length;
+        const validations = this.rounds.reduce((acc, round) => acc + round.validator.membersWithValueCount(), 0);
+
+        return { rounds, validations };
+    }
 }
 
 class Round {
@@ -46,6 +54,7 @@ class Round {
                 this.validator = new Validator(-1, -1, -1, -1, -1);
                 break;
             case 6:
+                console.log("Creating validator with 6 columns");
                 this.validator = new Validator(-1, -1, -1, -1, -1, -1);
                 break;
             default:
@@ -88,6 +97,10 @@ class Round {
 
     getCode() {
         return this.code;
+    }
+
+    getValidations() {
+        return this.validator.membersWithValueCount();
     }
 }
 
@@ -159,9 +172,9 @@ export const useGame = () => {
         return cloned;
     };
 
-    const startGame = (n) => {
+    const startGame = (gameId, n) => {
         setIsGameStarted(true);
-        setGame(new Game(n));
+        setGame(new Game(gameId, n));
     };
 
 
