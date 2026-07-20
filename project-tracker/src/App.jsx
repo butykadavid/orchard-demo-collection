@@ -3,6 +3,7 @@ import { createStore } from '@orchardapp/sdk'
 import './App.css'
 import ProjectForm from './components/ProjectForm'
 import DraftsList from './components/DraftsList'
+import ProjectList from './components/ProjectList'
 
 function App() {
   const [state, setState] = useState({
@@ -12,8 +13,8 @@ function App() {
   const [editingId, setEditingId] = useState(null)
   const [editingData, setEditingData] = useState(null)
   const [store, setStore] = useState(null)
+  const [isFormOpen, setIsFormOpen] = useState(false)
 
-  // Initialize store on mount
   useEffect(() => {
     const projectStore = createStore('projectTrackerData', {
       projects: [],
@@ -34,7 +35,8 @@ function App() {
       title: projectData.title,
       description: projectData.description,
       startDate: projectData.startDate || new Date().toISOString().split('T')[0],
-      tags: projectData.tags || [],
+      endDate: projectData.endDate || '',
+      status: projectData.status || 'active',
       isDraft: projectData.isDraft || false
     }
 
@@ -55,15 +57,14 @@ function App() {
         title: projectData.title,
         description: projectData.description,
         startDate: projectData.startDate,
-        tags: projectData.tags || [],
+        endDate: projectData.endDate || '',
+        status: projectData.status || 'active',
         isDraft: projectData.isDraft || false
       }
 
-      // Remove from current location
-      let updatedProjects = s.projects.filter(p => p.id !== id)
-      let updatedDrafts = s.drafts.filter(p => p.id !== id)
+      let updatedProjects = s.projects.filter((p) => p.id !== id)
+      let updatedDrafts = s.drafts.filter((p) => p.id !== id)
 
-      // Add to new location
       if (updatedProject.isDraft) {
         updatedDrafts = [...updatedDrafts, updatedProject]
       } else {
@@ -85,9 +86,9 @@ function App() {
 
     store.update((s) => {
       if (isDraft) {
-        return { ...s, drafts: s.drafts.filter(p => p.id !== id) }
+        return { ...s, drafts: s.drafts.filter((p) => p.id !== id) }
       }
-      return { ...s, projects: s.projects.filter(p => p.id !== id) }
+      return { ...s, projects: s.projects.filter((p) => p.id !== id) }
     })
   }
 
@@ -102,40 +103,61 @@ function App() {
 
     store.update((s) => ({
       projects: [...s.projects, activeProject],
-      drafts: s.drafts.filter(p => p.id !== draftProject.id)
+      drafts: s.drafts.filter((p) => p.id !== draftProject.id)
     }))
   }
 
+  const openProjectForm = (project = null, isDraft = false) => {
+    if (project) {
+      setEditingId(project.id)
+      setEditingData({ ...project, isDraft })
+    } else {
+      setEditingId(null)
+      setEditingData(null)
+    }
+    setIsFormOpen(true)
+  }
+
+  const closeProjectForm = () => {
+    setEditingId(null)
+    setEditingData(null)
+    setIsFormOpen(false)
+  }
+
   const startEditing = (project, isDraft = false) => {
-    setEditingId(project.id)
-    setEditingData({ ...project, isDraft })
+    openProjectForm(project, isDraft)
   }
 
   const cancelEditing = () => {
-    setEditingId(null)
-    setEditingData(null)
+    closeProjectForm()
+  }
+
+  const handleFormSubmit = (projectData) => {
+    if (editingId) {
+      updateProject(editingId, projectData)
+    } else {
+      addProject(projectData)
+    }
+    closeProjectForm()
   }
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h3>Hobby Project Tracker</h3>
+        <button className="hero-action" onClick={() => openProjectForm()}>
+          + Add Project
+        </button>
       </header>
 
       <main className="app-main">
-        <section className="form-section">
-          <h2>{editingId ? 'Edit Project' : 'Add New Project'}</h2>
-          <ProjectForm
-            onSubmit={editingId ? (data) => updateProject(editingId, data) : addProject}
-            onCancel={cancelEditing}
-            initialData={editingData}
-            isEditing={editingId !== null}
-          />
-        </section>
-
         {state.drafts && state.drafts.length > 0 && (
           <section className="drafts-section">
-            <h2>📋 Draft Projects ({state.drafts.length})</h2>
+            <div className="section-heading">
+              <div>
+                <h2>Drafts</h2>
+                <p>{state.drafts.length} ideas waiting for the right moment.</p>
+              </div>
+            </div>
             <DraftsList
               drafts={state.drafts}
               onStart={startDraftProject}
@@ -146,18 +168,32 @@ function App() {
         )}
 
         <section className="projects-section">
-          <h2>🚀 Timeline ({state.projects ? state.projects.length : 0})</h2>
+          <div className="section-heading">
+            <div>
+              <h2>Timeline</h2>
+              <p>{state.projects ? state.projects.length : 0} active projects.</p>
+            </div>
+          </div>
           {state.projects && state.projects.length > 0 ? (
-            <ProjectTimeline
+            <ProjectList
               projects={state.projects}
               onEdit={startEditing}
               onDelete={deleteProject}
             />
           ) : (
-            <p className="empty-state">No active projects yet. Start one now!</p>
+            <p className="empty-state">No active projects yet. Start one now.</p>
           )}
         </section>
       </main>
+
+      <ProjectForm
+        isOpen={isFormOpen}
+        onClose={closeProjectForm}
+        onSubmit={handleFormSubmit}
+        onCancel={cancelEditing}
+        initialData={editingData}
+        isEditing={editingId !== null}
+      />
     </div>
   )
 }

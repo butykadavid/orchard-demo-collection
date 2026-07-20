@@ -1,12 +1,6 @@
 .drafts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     margin-top: 0;
-}
-
-@media (max-width: 768px) {
-    .drafts-grid {
-        grid-template-columns: 1fr;
-    }
 }
