@@ -58,6 +58,15 @@ select {
   font-family: var(--sans);
 }
 
+*::-webkit-scrollbar {
+    width: 4px;
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: gray;
+}
+
 @media (max-width: 768px) {
   :root {
     font-size: 15px;
