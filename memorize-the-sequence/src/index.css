@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.04);
+    }
+}
+
+.tile-lit {
+    animation: pulse-glow 0.35s ease-in-out;
+}
