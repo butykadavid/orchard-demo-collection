@@ -1,0 +1,21 @@
+Name;Skill;Team;CarPerf;GridPos;Fuel;TyreState;TyreType;LastLap;RaceTime;CompLaps;Stops;AllTyres;FrontWing;RearWing;FrontSusp;RearSusp;FrontRide;RearRide;FrontBrakeBias;BrakePress;FrontTyrePress;RearTyrePress
+Lewis Hamilton;90;Mercedes;129;1;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Valtteri Bottas;85;Mercedes;129;2;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Max Verstappen;92;RedBull;130;3;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Sergio Perez;87;RedBull;130;4;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Sebastian Vettel;85;Aston Martin;74;5;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Lance Stroll;80;Aston Martin;74;6;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Charles Leclerc;91;Ferrari;88;7;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Carlos Sainz;85;Ferrari;88;8;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Fernando Alonso;88;Alpine;76;9;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Esteban Ocon;81;Alpine;76;10;100;100;s;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Daniel Ricciardo;88;McLaren;95;11;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Lando Norris;88;McLaren;95;12;100;100;h;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Pierre Gasly;82;AlphaTauri;75;13;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Yuki Tsunoda;80;AlphaTauri;75;14;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Mick Schumacher;75;Haas;1;15;100;100;h;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Nikita Mazepin;70;Haas;1;16;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Kimi Raikkonen;83;AlfaRomeo;22;17;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Antonio Giovinazzi;81;AlfaRomeo;22;18;100;100;h;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+George Russel;85;Williams;30;19;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
+Nicolas Latifi;76;Williams;30;20;100;100;m;0;0;0;0;;5;5;5;5;5;5;5;5;5;5
