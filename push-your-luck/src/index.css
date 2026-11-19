@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@keyframes dice-shake {
+    0% {
+        transform: rotate(0deg) scale(1);
+    }
+
+    25% {
+        transform: rotate(-18deg) scale(1.08);
+    }
+
+    50% {
+        transform: rotate(14deg) scale(0.96);
+    }
+
+    75% {
+        transform: rotate(-10deg) scale(1.06);
+    }
+
+    100% {
+        transform: rotate(0deg) scale(1);
+    }
+}
+
+.dice-rolling {
+    animation: dice-shake 0.25s linear infinite;
+}

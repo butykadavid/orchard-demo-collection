@@ -507,7 +507,7 @@ export default function App() {
                         </div>
 
                         {/* Action Bar */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-slate-800/80">
                             {/* <div className="text-xs text-slate-400">
                                 {phase === "idle" &&
                                     "Press Start Round 1 to begin. You can also use number keys (1–9)."}
