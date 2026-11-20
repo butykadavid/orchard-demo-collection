@@ -12,6 +12,8 @@ import {
     MECH_FAIL_PER_RACE,
     MIN_GAP_S,
     OVERTAKE_ZONES,
+    OVTK_EASY_LEVEL,
+    OVTK_HARDNESS_EXP,
     OVERTAKE_ZONE_SHARE,
     OVERTAKE_ZONE_WIDTH,
     PIT_DURATION,
@@ -190,6 +192,11 @@ export function getStandings(race) {
 // Overtaking: a continuous pass rate (hazard) per lap travelled behind the car ahead
 // ---------------------------------------------------------------------------------------------
 
+// Passing difficulty factor of a track: 1 up to OVTK_EASY_LEVEL, then falling exponentially.
+export function overtakeEase(multiplier) {
+    return Math.exp(-OVTK_HARDNESS_EXP * Math.max(0, multiplier - OVTK_EASY_LEVEL));
+}
+
 // Passes per lap of following (as a rate: chance within a distance d is 1 - exp(-rate * d)).
 // It grows with the pace advantage relative to what the track demands, so a car that is far quicker than
 // the one ahead gets by almost immediately, while an equal car rarely does. Staying close for a long time
@@ -199,7 +206,8 @@ export function overtakeRate(delta, multiplier, chaseLaps = 0) {
     const r = delta / needed;
     const rate = 0.083 + 0.7 * r + (r > 0 ? 0.5 * r * r : 0);
     if (rate <= 0) return 0;
-    return rate + 0.25 * Math.min(chaseLaps, 2);
+    // Beyond an easy-to-normal track, passing gets exponentially harder (Monaco is far harder than Imola)
+    return (rate + 0.25 * Math.min(chaseLaps, 2)) * overtakeEase(multiplier);
 }
 
 // Relative passing opportunity at a lap fraction (averages 1 over a lap): concentrated in the zones.
@@ -396,7 +404,7 @@ export function stepRace(race, dt) {
             }
 
             let rate = overtakeRate(delta, track.ovtkMultiplier, car.chaseLaps);
-            if (lap1) rate = Math.max(rate * LAP1_OVERTAKE_MULT, LAP1_OVERTAKE_MIN_RATE);
+            if (lap1) rate = Math.max(rate * LAP1_OVERTAKE_MULT, LAP1_OVERTAKE_MIN_RATE * overtakeEase(track.ovtkMultiplier));
             if (!collided && rate > 0 && oldPos >= 0) {
                 const zones = lap1 ? [START_CORNER, ...OVERTAKE_ZONES] : OVERTAKE_ZONES;
                 const exposure = travelled * zoneDensity(oldPos + travelled / 2, zones);

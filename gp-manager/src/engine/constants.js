@@ -17,6 +17,8 @@ export const CLOSE_RATE = 0.5; // how quickly a follower closes to MIN_GAP_S (1/
 export const OVERTAKE_ZONES = [0.3, 0.8]; // lap fractions where passing is easiest (long straights / heavy braking)
 export const OVERTAKE_ZONE_WIDTH = 0.08; // length of each zone in laps
 export const OVERTAKE_ZONE_SHARE = 0.7; // share of all passing opportunity that lies inside the zones
+export const OVTK_EASY_LEVEL = 3; // overtaking difficulty up to which passing keeps its base rate
+export const OVTK_HARDNESS_EXP = 0.4; // pass rate falls by exp(-this) per difficulty point above OVTK_EASY_LEVEL
 export const ATTEMPTS_PER_LAP = 2; // how often a close follower commits to a move per lap (drives collision risk)
 
 export const SECTORS = 50; // timing resolution per lap, used for accurate gaps
