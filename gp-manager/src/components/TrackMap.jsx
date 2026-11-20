@@ -1,39 +1,45 @@
+import { useMemo } from "react";
 import { CloudRain } from "lucide-react";
-import { PIT_ENTRY, TEAMS } from "../engine/constants.js";
+import { PIT_ENTRY } from "../engine/constants.js";
+import { buildTrackShape } from "../engine/trackShape.js";
 
 const SIZE = 400;
-const C = SIZE / 2;
-const R = 150;
-const PIT_R = R - 22;
-
-const angleOf = (frac) => frac * 2 * Math.PI - Math.PI / 2;
-const pointAt = (frac, r) => [C + r * Math.cos(angleOf(frac)), C + r * Math.sin(angleOf(frac))];
-
-function arc(fromFrac, toFrac, r) {
-    const [x1, y1] = pointAt(fromFrac, r);
-    const [x2, y2] = pointAt(toFrac, r);
-    const large = toFrac - fromFrac > 0.5 ? 1 : 0;
-    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
-}
+const ROAD_WIDTH = 16;
+const PIT_OFFSET = 15; // pit lane distance inside the track centreline
 
 export default function TrackMap({ race, standings, lap }) {
+    const shape = useMemo(() => buildTrackShape(race.track), [race.track]);
     const rankOf = new Map(standings.map((s) => [s.car.code, s.position]));
     const wetOpacity = Math.min(0.6, (race.wet / 100) * 0.9);
+    const [lineA, lineB] = [shape.place(0, -ROAD_WIDTH / 2 - 1), shape.place(0, ROAD_WIDTH / 2 + 1)];
 
     return (
         <div className="relative mx-auto aspect-square w-full max-w-130">
             <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-full w-full">
                 {/* Tarmac */}
-                <circle cx={C} cy={C} r={R} fill="none" stroke="#27272a" strokeWidth="26" />
-                <circle cx={C} cy={C} r={R} fill="none" stroke="#3b82f6" strokeWidth="26" strokeOpacity={wetOpacity} />
-                <circle cx={C} cy={C} r={R + 13} fill="none" stroke="#3f3f46" strokeWidth="1" />
-                <circle cx={C} cy={C} r={R - 13} fill="none" stroke="#3f3f46" strokeWidth="1" />
+                <path d={shape.loop} fill="none" stroke="#3f3f46" strokeWidth={ROAD_WIDTH + 2} strokeLinejoin="round" />
+                <path d={shape.loop} fill="none" stroke="#27272a" strokeWidth={ROAD_WIDTH} strokeLinejoin="round" />
+                <path
+                    d={shape.loop}
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeWidth={ROAD_WIDTH}
+                    strokeLinejoin="round"
+                    strokeOpacity={wetOpacity}
+                />
 
                 {/* Pit lane */}
-                <path d={arc(PIT_ENTRY, 1.04, PIT_R)} fill="none" stroke="#3f3f46" strokeWidth="6" strokeLinecap="round" />
+                <path
+                    d={shape.pathBetween(PIT_ENTRY, 1.04, -PIT_OFFSET, 16)}
+                    fill="none"
+                    stroke="#3f3f46"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
 
                 {/* Start / finish line */}
-                <rect x={C - 1.5} y={C - R - 13} width="3" height="26" fill="#e4e4e7" opacity="0.85" />
+                <line x1={lineA[0]} y1={lineA[1]} x2={lineB[0]} y2={lineB[1]} stroke="#e4e4e7" strokeWidth="3" opacity="0.85" />
 
                 {/* Cars */}
                 {race.cars
@@ -41,13 +47,12 @@ export default function TrackMap({ race, standings, lap }) {
                     .sort((a, b) => Number(a.isPlayer) - Number(b.isPlayer))
                     .map((car) => {
                         const frac = ((car.pos % 1) + 1) % 1;
-                        const stagger = car.gridPos % 2 === 0 ? 4 : -4;
-                        const r = car.pit ? PIT_R : R + stagger;
-                        const [x, y] = pointAt(frac, r);
+                        const stagger = car.gridPos % 2 === 0 ? 3 : -3;
+                        const [x, y] = shape.place(frac, car.pit ? -PIT_OFFSET : stagger);
                         const position = rankOf.get(car.code);
                         const showLabel = car.isPlayer || position <= 3;
-                        const color = TEAMS[car.team]?.color ?? "#a1a1aa";
-                        const [lx, ly] = pointAt(frac, R + 26);
+                        const color = car.color ?? "#a1a1aa";
+                        const [lx, ly] = shape.place(frac, 20);
                         return (
                             <g key={car.code} opacity={car.finished ? 0.55 : 1}>
                                 <circle

@@ -1,10 +1,9 @@
 import { Trophy } from "lucide-react";
-import { TEAMS } from "../engine/constants.js";
 import { fmtGap, fmtLap } from "../engine/format.js";
 import { TyreBadge } from "./Tyre.jsx";
 
-export default function RaceResults({ standings, fastest, playerCode, onBack }) {
-    const player = standings.find((s) => s.car.code === playerCode);
+export default function RaceResults({ standings, fastest, playerTeam, onBack }) {
+    const mine = standings.filter((s) => s.car.isPlayer);
 
     return (
         <div className="fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-zinc-950/85 p-3 backdrop-blur-sm">
@@ -12,7 +11,11 @@ export default function RaceResults({ standings, fastest, playerCode, onBack }) 
                 <div className="mb-3 flex items-center gap-2">
                     <Trophy size={18} className="text-amber-400" />
                     <h2 className="text-lg font-bold tracking-tight">Final classification</h2>
-                    {player && <span className="ml-auto text-sm text-zinc-400">You finished P{player.position}</span>}
+                    {mine.length > 0 && (
+                        <span className="ml-auto text-sm text-zinc-400">
+                            {playerTeam}: {mine.map((s) => `${s.car.code} P${s.position}`).join(" · ")}
+                        </span>
+                    )}
                 </div>
 
                 <table className="w-full text-xs">
@@ -30,7 +33,7 @@ export default function RaceResults({ standings, fastest, playerCode, onBack }) 
                             <tr key={s.car.code} className={s.car.isPlayer ? "bg-red-500/15" : "odd:bg-zinc-800/30"}>
                                 <td className="py-0.5 font-mono text-zinc-400">{s.position}</td>
                                 <td className="py-0.5">
-                                    <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: TEAMS[s.car.team]?.color }} />
+                                    <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: s.car.color }} />
                                     <span className="font-semibold">{s.car.code}</span>{" "}
                                     <span className="text-zinc-400">{s.car.name}</span>
                                 </td>

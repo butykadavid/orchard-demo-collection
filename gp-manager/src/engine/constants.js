@@ -1,12 +1,12 @@
 // ---- Simulation tuning (values carried over from the legacy console game where noted) ----
 
 export const SIM_DT = 0.1; // seconds of race time per fixed simulation step
-export const GAP_UPDATE_TICKS = 10; // the timing tower refreshes its gaps every this many simulation steps
-export const SPEEDS = [1, 2, 4, 8, 16];
+export const GAP_UPDATE_TICKS = 20; // the timing tower refreshes its gaps every this many simulation steps
+export const SPEEDS = [1, 2, 4, 8, 16, 32];
 export const RACE_FRACTIONS = [0.25, 0.5, 0.75, 1];
 
-export const PIT_LOSS = 22.3; // legacy: fixed time lost per pit stop (s)
-export const PIT_LANE_FACTOR = 0.25; // speed in the pit lane relative to free pace
+export const PIT_LOSS = 22; // legacy: fixed time lost per pit stop (s)
+export const PIT_LANE_FACTOR = 0.2; // speed in the pit lane relative to free pace
 export const PIT_DURATION = PIT_LOSS / (1 - PIT_LANE_FACTOR); // time spent in the pit phase (s)
 export const PIT_ENTRY = 0.96; // lap fraction where cars may turn into the pits
 
@@ -67,17 +67,4 @@ export const TYRES = {
     h: { id: "h", name: "Hard", pace: 2.8, wear: 2, wetK: 0.36, kind: "slick", color: "#e4e4e7" },
     i: { id: "i", name: "Inter", pace: 0, wear: 2.5, wetK: 0, kind: "inter", color: "#22c55e" },
     w: { id: "w", name: "Wet", pace: 0, wear: 2.2, wetK: 0, kind: "wet", color: "#38bdf8" },
-};
-
-export const TEAMS = {
-    Mercedes: { label: "Mercedes", color: "#2dd4bf" },
-    RedBull: { label: "Red Bull", color: "#3b6fd6" },
-    "Aston Martin": { label: "Aston Martin", color: "#16a37f" },
-    Ferrari: { label: "Ferrari", color: "#ef2b2b" },
-    Alpine: { label: "Alpine", color: "#38a3f5" },
-    McLaren: { label: "McLaren", color: "#ff8000" },
-    AlphaTauri: { label: "AlphaTauri", color: "#94b3d8" },
-    Haas: { label: "Haas", color: "#a1a1aa" },
-    AlfaRomeo: { label: "Alfa Romeo", color: "#c0394b" },
-    Williams: { label: "Williams", color: "#60c8f0" },
 };

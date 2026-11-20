@@ -1,4 +1,4 @@
-import { CLIFF_STATE, CLIFF_SECONDS_PER_PCT, PUNCTURE_MAX_PER_LAP, PUNCTURE_PER_LAP, TYRES } from "./constants.js";
+import { CLIFF_STATE, CLIFF_SECONDS_PER_PCT, PUNCTURE_MAX_PER_LAP, PUNCTURE_PER_LAP, TYRE_IDS, TYRES } from "./constants.js";
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -48,10 +48,11 @@ export function lapsTotalFor(track, fraction) {
     return Math.max(3, Math.round(track.laps * fraction));
 }
 
-// Compounds a sensible driver would consider for the given track wetness.
+// Compounds a sensible driver would consider for the given track wetness (dry compounds include any custom ones).
 export function allowedTyres(wet) {
-    if (wet < 18) return ["s", "m", "h"];
-    if (wet < 23) return ["s", "m", "h", "i"];
+    const slicks = TYRE_IDS.filter((id) => TYRES[id].kind === "slick");
+    if (wet < 18) return slicks;
+    if (wet < 23) return [...slicks, "i"];
     if (wet < 57) return ["i"];
     if (wet < 65) return ["i", "w"];
     return ["w"];

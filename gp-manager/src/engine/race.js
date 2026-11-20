@@ -40,7 +40,7 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 // Setup
 // ---------------------------------------------------------------------------------------------
 
-export function createRace({ grid, track, weather, fraction, playerCode, rng }) {
+export function createRace({ grid, track, weather, fraction, playerTeam, rng }) {
     const lapsTotal = lapsTotalFor(track, fraction);
 
     const cars = grid.map((g) => ({
@@ -48,7 +48,8 @@ export function createRace({ grid, track, weather, fraction, playerCode, rng }) 
         code: g.driver.code,
         name: g.driver.name,
         team: g.driver.team,
-        isPlayer: g.driver.code === playerCode,
+        color: g.driver.color,
+        isPlayer: playerTeam !== null && playerTeam !== undefined && g.driver.team === playerTeam,
         gridPos: g.gridPos,
         pos: (-(g.gridPos - 1) * START_GAP_S) / track.optLapTime, // in laps, negative = behind the line
         prevPos: 0,
@@ -106,7 +107,7 @@ export function createRace({ grid, track, weather, fraction, playerCode, rng }) 
         events: [],
         eventSeq: 0,
         fastest: null,
-        playerCode,
+        playerTeam,
     };
 }
 
@@ -121,11 +122,11 @@ function pushEvent(race, kind, text) {
 // Player actions
 // ---------------------------------------------------------------------------------------------
 
-// Request a stop for the next pit entry (null cancels). Returns false when no stop is possible.
-export function requestPit(race, tyreId) {
-    const player = race.cars.find((c) => c.isPlayer);
-    if (!player || player.finished || player.dnf) return false;
-    player.pitRequest = tyreId;
+// Request a stop for a player car's next pit entry (null cancels). Returns false when no stop is possible.
+export function requestPit(race, code, tyreId) {
+    const car = race.cars.find((c) => c.isPlayer && c.code === code);
+    if (!car || car.finished || car.dnf) return false;
+    car.pitRequest = tyreId;
     return true;
 }
 

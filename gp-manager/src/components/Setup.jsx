@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Dices, Flag, RefreshCw } from "lucide-react";
 import { DRIVERS, TRACKS } from "../data/index.js";
-import { RACE_FRACTIONS, TEAMS, TYRE_IDS, TYRES } from "../engine/constants.js";
+import { RACE_FRACTIONS, TYRE_IDS, TYRES } from "../engine/constants.js";
 import { allowedTyres, lapsTotalFor, wearPerLap } from "../engine/pace.js";
 import { createRng } from "../engine/rng.js";
 import { createWeather, forecast, rainAt, waterAt } from "../engine/weather.js";
@@ -36,11 +36,28 @@ function Segmented({ options, value, onChange }) {
     );
 }
 
+// Teams in grid order with their colour and driver codes (a team is a group of drivers with the same team name)
+function teamsOf(drivers) {
+    const teams = [];
+    for (const d of drivers) {
+        let t = teams.find((x) => x.name === d.team);
+        if (!t) teams.push((t = { name: d.team, color: d.color, codes: [] }));
+        t.codes.push(d.code);
+    }
+    return teams;
+}
+
 export default function Setup({ initial, onRunQualifying }) {
     const [trackId, setTrackId] = useState(initial?.trackId ?? 43);
     const [fraction, setFraction] = useState(initial?.fraction ?? 0.25);
-    const [playerCode, setPlayerCode] = useState(initial?.playerCode === undefined ? "HAM" : initial.playerCode);
-    const [tyre, setTyre] = useState(initial?.tyre ?? "m");
+    const teams = teamsOf(DRIVERS);
+    const [playerTeam, setPlayerTeam] = useState(() => {
+        const wanted = initial?.playerTeam === undefined ? teams[0]?.name : initial.playerTeam;
+        return teams.some((t) => t.name === wanted) ? wanted : null; // null = spectate (e.g. the team was removed or renamed)
+    });
+    // Starting tyre per driver code; a missing or removed (custom) compound falls back to Medium
+    const [tyres, setTyres] = useState(() => initial?.tyres ?? {});
+    const tyreOf = (code) => (TYRES[tyres[code]] ? tyres[code] : "m");
     const [reversed, setReversed] = useState(initial?.reversed ?? false);
     const [seed, setSeed] = useState(initial?.seed ?? Date.now());
 
@@ -59,13 +76,16 @@ export default function Setup({ initial, onRunQualifying }) {
         setSeed(Date.now());
     };
 
-    const run = () => onRunQualifying({ trackId: track.id, fraction, playerCode, tyre, reversed, seed, weather });
+    const myDrivers = DRIVERS.filter((d) => d.team === playerTeam);
+
+    const run = () =>
+        onRunQualifying({ trackId: track.id, fraction, playerTeam, tyres: Object.fromEntries(myDrivers.map((d) => [d.code, tyreOf(d.code)])), reversed, seed, weather });
 
     return (
         <div className="mx-auto grid max-w-5xl gap-3 p-3 md:grid-cols-[1fr_320px] md:p-6">
             <header className="flex items-center gap-2 md:col-span-2">
                 <Flag size={20} className="text-red-500" />
-                <h1 className="text-lg font-bold tracking-tight">GP Manager</h1>
+                <h1 className="text-lg font-bold tracking-tight">Pocket GP</h1>
                 <span className="text-xs text-zinc-500">Race weekend setup</span>
             </header>
 
@@ -135,58 +155,60 @@ export default function Setup({ initial, onRunQualifying }) {
                     </Card>
                 </div>
 
-                <Card title="Driver">
-                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                <Card title="Team (you manage all of its drivers)">
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                         <button
                             type="button"
-                            onClick={() => setPlayerCode(null)}
-                            className={`rounded-md border px-2 py-1.5 text-left text-xs ${playerCode === null ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
+                            onClick={() => setPlayerTeam(null)}
+                            className={`rounded-md border px-2 py-1.5 text-left text-xs ${playerTeam === null ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
                                 }`}
                         >
                             <span className="font-semibold">Spectate</span>
                             <span className="block text-[10px] text-zinc-500">watch only</span>
                         </button>
-                        {DRIVERS.map((d) => (
+                        {teams.map((t) => (
                             <button
-                                key={d.code}
+                                key={t.name}
                                 type="button"
-                                onClick={() => setPlayerCode(d.code)}
-                                className={`rounded-md border border-l-4 px-2 py-1.5 text-left text-xs ${playerCode === d.code ? "border-y-red-500 border-r-red-500 bg-red-500/10" : "border-y-zinc-800 border-r-zinc-800 hover:bg-zinc-800"
+                                onClick={() => setPlayerTeam(t.name)}
+                                className={`rounded-md border border-l-4 px-2 py-1.5 text-left text-xs ${playerTeam === t.name ? "border-y-red-500 border-r-red-500 bg-red-500/10" : "border-y-zinc-800 border-r-zinc-800 hover:bg-zinc-800"
                                     }`}
-                                style={{ borderLeftColor: TEAMS[d.team]?.color }}
+                                style={{ borderLeftColor: t.color }}
                             >
-                                <span className="font-semibold">{d.code}</span>{" "}
-                                <span className="text-zinc-400">{d.name.split(" ").slice(-1)[0]}</span>
+                                <span className="font-semibold">{t.name}</span>
+                                <span className="block text-[10px] text-zinc-500">{t.codes.join(" · ")}</span>
                             </button>
                         ))}
                     </div>
                 </Card>
 
-                <Card title="Starting tyre (used in qualifying and race)">
-                    <div className="grid grid-cols-5 gap-1.5">
-                        {TYRE_IDS.map((id) => {
-                            const t = TYRES[id];
-                            const life = Math.round(100 / wearPerLap(id, lapsTotal));
-                            return (
-                                <button
-                                    key={id}
-                                    type="button"
-                                    onClick={() => setTyre(id)}
-                                    className={`relative flex flex-col items-center gap-1 rounded-md border px-1 py-2 text-xs ${tyre === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
-                                        }`}
-                                >
-                                    {recommended.includes(id) && (
-                                        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-400" title="Suits the conditions" />
-                                    )}
-                                    <TyreBadge id={id} size={26} />
-                                    <span className="font-semibold">{t.name}</span>
-                                    <span className="text-[10px] text-zinc-500">~{life} laps</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <p className="mt-2 text-[10px] text-zinc-500">Green dot: suits the expected conditions at the start.</p>
-                </Card>
+                {myDrivers.map((d) => (
+                    <Card key={d.code} title={`Starting tyre — ${d.code} ${d.name} (qualifying and race)`}>
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(4.5rem,1fr))] gap-1.5">
+                            {TYRE_IDS.map((id) => {
+                                const t = TYRES[id];
+                                const life = Math.round(100 / wearPerLap(id, lapsTotal));
+                                return (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        onClick={() => setTyres((prev) => ({ ...prev, [d.code]: id }))}
+                                        className={`relative flex flex-col items-center gap-1 rounded-md border px-1 py-2 text-xs ${tyreOf(d.code) === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
+                                            }`}
+                                    >
+                                        {recommended.includes(id) && (
+                                            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-400" title="Suits the conditions" />
+                                        )}
+                                        <TyreBadge id={id} size={26} />
+                                        <span className="font-semibold">{t.name}</span>
+                                        <span className="text-[10px] text-zinc-500">~{life} laps</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </Card>
+                ))}
+                {myDrivers.length > 0 && <p className="-mt-1 px-1 text-[10px] text-zinc-500">Green dot: suits the expected conditions at the start.</p>}
             </div>
 
             <div className="flex flex-col gap-3">

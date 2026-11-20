@@ -8,15 +8,28 @@ import { requestPit } from "../engine/race.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
 
 export default function PlayerPanel({ race, standings }) {
-    const [next, setNext] = useState("h");
-    const idx = standings.findIndex((s) => s.car.isPlayer);
-    if (idx === -1) {
+    const mine = standings.map((s, idx) => ({ s, idx })).filter(({ s }) => s.car.isPlayer);
+    if (mine.length === 0) {
         return (
             <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-500">
                 Spectator mode — no car to manage.
             </div>
         );
     }
+
+    // Keep the panels in a fixed order (grid order of the drivers) so they do not swap places as positions change
+    const cars = mine.slice().sort((a, b) => a.s.car.gridPos - b.s.car.gridPos);
+    return (
+        <>
+            {cars.map(({ s, idx }) => (
+                <CarPanel key={s.car.code} race={race} standings={standings} idx={idx} />
+            ))}
+        </>
+    );
+}
+
+function CarPanel({ race, standings, idx }) {
+    const [next, setNext] = useState("h");
 
     const s = standings[idx];
     const car = s.car;
@@ -34,7 +47,7 @@ export default function PlayerPanel({ race, standings }) {
     if (car.dnf) {
         return (
             <div className="rounded-lg border border-red-900 bg-red-950/40 p-3">
-                <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-red-400">Your car — retired</h3>
+                <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-red-400">{car.team} — {car.code} retired</h3>
                 <p className="text-sm">
                     {car.code} is out on lap {car.dnf.lap}: {car.dnf.reason}.
                 </p>
@@ -44,13 +57,16 @@ export default function PlayerPanel({ race, standings }) {
 
     const pickTyre = (id) => {
         setNext(id);
-        if (pending) requestPit(race, id);
+        if (pending) requestPit(race, car.code, id);
     };
 
     return (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
             <div className="mb-2 flex items-baseline justify-between">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Your car</h3>
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    <span className="mr-1.5 inline-block h-2.5 w-1 rounded-sm align-middle" style={{ backgroundColor: car.color }} />
+                    {car.team}
+                </h3>
                 <span className="text-xs text-zinc-400">
                     <span className="font-semibold text-zinc-100">{car.code}</span> · P{s.position}
                 </span>
@@ -104,13 +120,13 @@ export default function PlayerPanel({ race, standings }) {
             </dl>
 
             <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Next set</div>
-            <div className="mb-2 grid grid-cols-5 gap-1">
+            <div className="mb-2 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
                 {TYRE_IDS.map((id) => (
                     <button
                         key={id}
                         type="button"
                         onClick={() => pickTyre(id)}
-                        className={`relative flex flex-col items-center gap-0.5 rounded-md border py-1.5 text-[10px] ${next === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
+                        className={`relative flex flex-col items-center gap-0.5 rounded-md border py-2.5 text-[10px] lg:py-1.5 ${next === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
                             }`}
                     >
                         {suited.includes(id) && <span className="absolute right-1 top-1 h-1 w-1 rounded-full bg-emerald-400" />}
@@ -123,8 +139,8 @@ export default function PlayerPanel({ race, standings }) {
             <button
                 type="button"
                 disabled={!canPit && !pending}
-                onClick={() => requestPit(race, pending ? null : next)}
-                className={`flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${pending
+                onClick={() => requestPit(race, car.code, pending ? null : next)}
+                className={`flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-3.5 text-sm font-semibold transition-colors lg:py-2 ${pending
                     ? "pulse-box bg-amber-500 text-zinc-950 hover:bg-amber-400"
                     : "bg-red-600 text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
                     }`}

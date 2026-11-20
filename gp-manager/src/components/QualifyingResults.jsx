@@ -1,9 +1,9 @@
 import { ArrowLeft, Flag } from "lucide-react";
-import { TEAMS, TYRES } from "../engine/constants.js";
+import { TYRES } from "../engine/constants.js";
 import { fmtLap } from "../engine/format.js";
 import { TyreBadge } from "./Tyre.jsx";
 
-export default function QualifyingResults({ results, track, reversed, playerCode, onBack, onStartRace }) {
+export default function QualifyingResults({ results, track, reversed, playerTeam, onBack, onStartRace }) {
     const pole = results.find((r) => r.gridPos === 1);
     const best = Math.min(...results.map((r) => r.time));
 
@@ -32,16 +32,16 @@ export default function QualifyingResults({ results, track, reversed, playerCode
                     </thead>
                     <tbody>
                         {results.map((r) => {
-                            const mine = r.driver.code === playerCode;
+                            const mine = playerTeam !== null && r.driver.team === playerTeam;
                             return (
                                 <tr key={r.driver.code} className={mine ? "bg-red-500/10" : "odd:bg-zinc-900/40"}>
                                     <td className="px-3 py-1 font-mono text-zinc-400">{r.gridPos}</td>
                                     <td className="px-2 py-1">
-                                        <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: TEAMS[r.driver.team]?.color }} />
+                                        <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: r.driver.color }} />
                                         <span className="font-semibold">{r.driver.code}</span>{" "}
                                         <span className="text-zinc-400">{r.driver.name}</span>
                                     </td>
-                                    <td className="hidden px-2 py-1 text-zinc-400 sm:table-cell">{TEAMS[r.driver.team]?.label}</td>
+                                    <td className="hidden px-2 py-1 text-zinc-400 sm:table-cell">{r.driver.team}</td>
                                     <td className="px-2 py-1" title={TYRES[r.tyre].name}>
                                         <TyreBadge id={r.tyre} size={18} />
                                     </td>

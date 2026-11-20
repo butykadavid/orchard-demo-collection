@@ -10,13 +10,7 @@ function parseCsv(text) {
         .map((line) => line.split(";"));
 }
 
-const CODE_OVERRIDES = {
-    "Mick Schumacher": "MSC",
-    "George Russel": "RUS",
-};
-
 function driverCode(name) {
-    if (CODE_OVERRIDES[name]) return CODE_OVERRIDES[name];
     const last = name.split(" ").slice(-1)[0];
     return last.slice(0, 3).toUpperCase();
 }
@@ -26,8 +20,9 @@ export const DRIVERS = parseCsv(gridCsv).map((c) => ({
     name: c[0],
     skill: Number(c[1]),
     team: c[2],
-    carPerf: Number(c[3]),
-    defaultGridPos: Number(c[4]),
+    color: c[3],
+    carPerf: Number(c[4]),
+    defaultGridPos: Number(c[5]),
 }));
 
 export const TRACKS = parseCsv(tracksCsv).map((c) => ({

@@ -4,11 +4,18 @@ import { createRng } from "./engine/rng.js";
 import { createRace } from "./engine/race.js";
 import { runQualifying } from "./engine/qualifying.js";
 import QualifyingResults from "./components/QualifyingResults.jsx";
+import Customize from "./components/Customize.jsx";
 import Race from "./components/Race.jsx";
 import Setup from "./components/Setup.jsx";
 
+const VIEWS = [
+    { id: "setup", label: "Race weekend" },
+    { id: "customize", label: "Customize" },
+];
+
 export default function App() {
     const [phase, setPhase] = useState("setup"); // setup | qualifying | race
+    const [view, setView] = useState("setup"); // setup | customize (only switchable between races)
     const [config, setConfig] = useState(null);
     const [quali, setQuali] = useState(null);
     const [race, setRace] = useState(null);
@@ -22,8 +29,8 @@ export default function App() {
             track: t,
             weather: cfg.weather,
             fraction: cfg.fraction,
-            playerCode: cfg.playerCode,
-            playerTyre: cfg.tyre,
+            playerTeam: cfg.playerTeam,
+            playerTyres: cfg.tyres,
             reversed: cfg.reversed,
             rng: createRng(cfg.seed + 1),
         });
@@ -39,7 +46,7 @@ export default function App() {
                 track,
                 weather: config.weather,
                 fraction: config.fraction,
-                playerCode: config.playerCode,
+                playerTeam: config.playerTeam,
                 rng: createRng(config.seed + 2),
             })
         );
@@ -52,7 +59,7 @@ export default function App() {
                 results={quali}
                 track={track}
                 reversed={config.reversed}
-                playerCode={config.playerCode}
+                playerTeam={config.playerTeam}
                 onBack={() => setPhase("setup")}
                 onStartRace={handleStartRace}
             />
@@ -63,5 +70,23 @@ export default function App() {
         return <Race key={config.seed} race={race} onExit={() => setPhase("setup")} />;
     }
 
-    return <Setup initial={config} onRunQualifying={handleRunQualifying} />;
+    return (
+        <>
+            <nav className="mx-auto flex max-w-5xl justify-end px-3 pt-3 md:px-6">
+                <div className="flex overflow-hidden rounded-md border border-zinc-700">
+                    {VIEWS.map((v) => (
+                        <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => setView(v.id)}
+                            className={`px-3 py-1.5 text-xs font-medium ${view === v.id ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`}
+                        >
+                            {v.label}
+                        </button>
+                    ))}
+                </div>
+            </nav>
+            {view === "customize" ? <Customize /> : <Setup initial={config} onRunQualifying={handleRunQualifying} />}
+        </>
+    );
 }

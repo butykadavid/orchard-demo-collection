@@ -1,4 +1,3 @@
-import { TEAMS } from "../engine/constants.js";
 import { fmtGap } from "../engine/format.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
 
@@ -27,7 +26,7 @@ export default function TimingTower({ standings, fastestCode }) {
                             title={out ? `Retired lap ${car.dnf.lap}: ${car.dnf.reason}` : undefined}
                         >
                             <span className="font-mono text-zinc-400">{s.position}</span>
-                            <span className="h-4 w-1 rounded-sm" style={{ backgroundColor: TEAMS[car.team]?.color }} />
+                            <span className="h-4 w-1 rounded-sm" style={{ backgroundColor: car.color }} />
                             <span className={`font-semibold ${fastestCode === car.code ? "text-fuchsia-400" : ""}`}>{car.code}</span>
                             <span className="truncate text-right font-mono">
                                 <span className={s.position === 1 && !out ? "text-zinc-400" : out ? "text-red-400" : ""}>{interval}</span>
