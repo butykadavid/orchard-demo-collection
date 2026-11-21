@@ -1,0 +1,24 @@
+{
+    "name": "gp-manager",
+    "private": true,
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "lucide-react": "^0.562.0",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7"
+    },
+    "devDependencies": {
+        "@tailwindcss/postcss": "^4",
+        "@types/react": "^19.2.17",
+        "@types/react-dom": "^19.2.3",
+        "@vitejs/plugin-react": "^4.3.4",
+        "tailwindcss": "^4",
+        "vite": "^7.2.4"
+    }
+}
