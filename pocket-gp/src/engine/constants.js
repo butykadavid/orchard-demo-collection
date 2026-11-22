@@ -66,9 +66,9 @@ export const LAP1_INCIDENT_MULT = 5; // multiplier on collision and driver-error
 // ---- Race control: safety car, virtual safety car, red flag ----
 export const SC_SPEED = 0.55; // share of its free speed a car runs at behind the safety car
 export const SC_CATCHUP = 0.9; // cars that are not bunched up yet may run this share of their free speed to close the gap
-export const SC_GAP_S = 0.8; // s: gap the field closes up to behind the car in front under the safety car
+export const SC_GAP_S = 0.5; // s: gap the field closes up to behind the car in front under the safety car
 export const SC_LAPS = [3, 5]; // laps (min, max) the field runs behind the safety car before it comes in
-export const VSC_SPEED = 0.7; // share of its free speed every car runs at under the virtual safety car
+export const VSC_SPEED = 0.6; // share of its free speed every car runs at under the virtual safety car
 export const VSC_LAPS = [0.8, 1.8]; // length of a virtual safety car period in laps at the nominal lap time (min, max)
 export const NEUTRAL_WEAR = 0.35; // tyre wear per distance covered while the race is neutralised or stopped (relative to racing)
 export const NEUTRAL_COOLDOWN_LAPS = 2; // laps after a neutralisation ends before the next one can be called

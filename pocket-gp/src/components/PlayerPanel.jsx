@@ -46,10 +46,19 @@ function CarPanel({ race, standings, idx }) {
     const pending = car.pitRequest !== null;
     const damaged = car.damage > 0.05;
     const repair = repairTimeFor(car.damage);
-    const crewBusy = car.pit ? 0 : Math.max(0, (race.teamBusyUntil.get(car.team) ?? 0) - race.clock);
     const red = race.control.mode === "red";
     const speedF = fieldSpeed(race);
     const redTyre = car.redTyre ?? car.tyre; // compound of the free set under a red flag
+
+    // Direct problems of this car as compact chips (the explanations live in the info panel)
+    const flags = [];
+    if (car.punctured) flags.push(["punct", "Puncture", "bg-red-500/20 text-red-300"]);
+    else if (car.tyreState < 20 && !car.pit) flags.push(["cliff", "Worn tyres", "bg-amber-500/20 text-amber-300"]);
+    if (damaged) flags.push(["dmg", `Damage +${car.damage.toFixed(1)} s/lap`, "bg-orange-500/20 text-orange-300"]);
+    if (car.recover > 0 && !car.pit && car.pos >= 0) flags.push(["rec", "Recovering", "bg-amber-500/20 text-amber-300"]);
+    if (!tyreRuleMet(car.allTyres) && !car.finished) {
+        flags.push(["rule", onFinalLap ? "Tyre rule: DSQ" : "Tyre rule", onFinalLap ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"]);
+    }
     if (car.dsq) {
         return (
             <div className="rounded-lg border border-red-900 bg-red-950/40 p-3">
@@ -80,17 +89,17 @@ function CarPanel({ race, standings, idx }) {
     return (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
             <div className="mb-2 flex items-baseline justify-between">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                    <span className="mr-1.5 inline-block h-2.5 w-1 rounded-sm align-middle" style={{ backgroundColor: car.color }} />
-                    {car.team}
+                <h3 className="flex items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    <span className="mr-1.5 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: car.color }} />
+                    {car.name}
                 </h3>
                 <span className="text-xs text-zinc-400">
-                    <span className="font-semibold text-zinc-100">{car.code}</span> · P{s.position}
+                    <span className="font-semibold text-zinc-100">P{s.position}</span>
                 </span>
             </div>
 
-            <div className="mb-3 flex items-center gap-3">
-                <TyreBadge id={car.tyre} size={34} />
+            <div className="mb-2 flex items-center gap-2.5">
+                <TyreBadge id={car.tyre} size={28} />
                 <div className="flex-1">
                     <div className="flex items-baseline justify-between text-xs">
                         <span className="font-semibold">{TYRES[car.tyre].name}</span>
@@ -103,52 +112,27 @@ function CarPanel({ race, standings, idx }) {
                 </div>
             </div>
 
-            {car.punctured ? (
-                <p className="mb-3 rounded-md bg-red-500/15 px-2 py-1.5 text-xs text-red-300">
-                    Puncture! Limping to the pits. A tyre is fitted automatically unless you choose one below.
-                </p>
-            ) : (
-                car.tyreState < 20 &&
-                !car.pit && (
-                    <p className="mb-3 rounded-md bg-amber-500/15 px-2 py-1.5 text-xs text-amber-300">
-                        Tyres past the cliff: lap times are dropping and a puncture is possible.
-                    </p>
-                )
+            {flags.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                    {flags.map(([key, text, style]) => (
+                        <span key={key} className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${style}`}>
+                            {text}
+                        </span>
+                    ))}
+                </div>
             )}
 
-            {!tyreRuleMet(car.allTyres) && !car.finished && (
-                <p className={`mb-3 rounded-md px-2 py-1.5 text-xs ${onFinalLap ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300"}`}>
-                    {onFinalLap
-                        ? `${car.code} will be disqualified: only one compound was used.`
-                        : `Tyre rule: ${car.code} has only used ${TYRES[car.tyre].name}. Stop for a different compound before the final lap or the car is disqualified.${tyreRuleMet(car.allTyres + next) ? "" : " The selected set would not count."
-                        }`}
-                </p>
-            )}
-
-            {car.recover > 0 && !car.pit && car.pos >= 0 && (
-                <p className="mb-3 rounded-md bg-amber-500/15 px-2 py-1.5 text-xs text-amber-300">Recovering from an incident: running slowly.</p>
-            )}
-            {damaged && (
-                <p className="mb-3 rounded-md bg-orange-500/15 px-2 py-1.5 text-xs text-orange-300">
-                    Car damage: +{car.damage.toFixed(1)} s per lap. Repairing it adds about {Math.round(repair)} s to your next stop.
-                </p>
-            )}
-
-            <dl className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                <dt className="text-zinc-500">Last lap</dt>
-                <dd className="text-right font-mono">{fmtLap(car.lastLap)}</dd>
-                <dt className="text-zinc-500">Best lap</dt>
-                <dd className="text-right font-mono">{fmtLap(car.bestLap)}</dd>
-                <dt className="text-zinc-500">{ahead ? `Ahead (${ahead.car.code})` : "Ahead"}</dt>
-                <dd className="text-right font-mono">{ahead ? fmtGap(s.gapAhead, s.lapsBehindAhead) : "—"}</dd>
-                <dt className="text-zinc-500">{behind ? `Behind (${behind.car.code})` : "Behind"}</dt>
-                <dd className="text-right font-mono">{behind ? fmtGap(behind.gapAhead, behind.lapsBehindAhead) : "—"}</dd>
+            <dl className="mb-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                <Stat label="Last" value={fmtLap(car.lastLap)} />
+                <Stat label="Best" value={fmtLap(car.bestLap)} />
+                <Stat label={ahead ? `+ ${ahead.car.code}` : "Ahead"} value={ahead ? fmtGap(s.gapAhead, s.lapsBehindAhead) : "—"} />
+                <Stat label={behind ? `− ${behind.car.code}` : "Behind"} value={behind ? fmtGap(behind.gapAhead, behind.lapsBehindAhead) : "—"} />
             </dl>
 
             {red ? (
                 <>
                     <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Free tyre change</div>
-                    <div className="mb-2 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
                         {TYRE_IDS.map((id) => (
                             <button
                                 key={id}
@@ -162,16 +146,11 @@ function CarPanel({ race, standings, idx }) {
                             </button>
                         ))}
                     </div>
-                    <p className="text-[10px] text-zinc-500">
-                        {car.parked
-                            ? `The race is stopped: a new ${TYRES[redTyre].name.toLowerCase()} set is fitted for free before the restart, and any damage is repaired.`
-                            : "The race is stopped. Choose the set for the restart while your car drives to the pit lane."}
-                    </p>
                 </>
             ) : (
                 <>
                     <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Next set</div>
-                    <div className="mb-2 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
+                    <div className="mb-1.5 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
                         {TYRE_IDS.map((id) => (
                             <button
                                 key={id}
@@ -202,13 +181,21 @@ function CarPanel({ race, standings, idx }) {
                             </>
                         ) : (
                             <>
-                                <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : "Box this lap"}
+                                <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : `Box this lap · ~${Math.round(pitLoss(race.track, speedF) + repair)} s`}
                             </>
                         )}
                     </button>
-                    <p className="mt-1.5 text-[10px] text-zinc-500">A stop costs about {Math.round(pitLoss(race.track, speedF) + repair)} s{damaged ? " including repairs" : ""}{speedF < 1 ? " (cheaper while the field is slow)" : ""}. You enter the pits at the end of the current lap.{crewBusy > 0.5 ? " Your crew is busy with your team mate right now: expect to wait if you come in straight away." : ""}</p>
                 </>
             )}
+        </div>
+    );
+}
+
+function Stat({ label, value }) {
+    return (
+        <div className="flex justify-between gap-2">
+            <dt className="text-zinc-500">{label}</dt>
+            <dd className="font-mono">{value}</dd>
         </div>
     );
 }

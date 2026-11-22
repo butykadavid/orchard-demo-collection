@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { FastForward, ListOrdered, Map as MapIcon, Play, Wrench } from "lucide-react";
 import { GAP_UPDATE_TICKS, SIM_DT, SPEEDS } from "../engine/constants.js";
-import { fmtClock } from "../engine/format.js";
+import { fmtClock, fmtLap, overtakingLabel } from "../engine/format.js";
+import { pitDriveTime } from "../engine/pit.js";
 import { getStandings, restartRace, simulateToEnd } from "../engine/race.js";
 import { forecast } from "../engine/weather.js";
 import { useRaceLoop } from "../hooks/useRaceLoop.js";
@@ -112,11 +113,16 @@ export default function Race({ race, onExit }) {
     return (
         <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-3 p-3 pb-20 lg:pb-3">
             <header className="sticky top-0 z-20 -mx-3 -mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-zinc-800 bg-zinc-950/95 px-3 py-2 backdrop-blur lg:static lg:mx-0 lg:mt-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-                <div className="flex items-baseline gap-3">
-                    <h1 className="text-base font-bold tracking-tight">{race.track.location}</h1>
-                    <span className="text-xs text-zinc-500">
-                        Lap {lap}/{race.lapsTotal} · {fmtClock(race.clock)}
-                    </span>
+                <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-base font-bold tracking-tight">{race.track.location}</h1>
+                        <span className="text-xs text-zinc-500">
+                            Lap {lap}/{race.lapsTotal} · {fmtClock(race.clock)}
+                        </span>
+                    </div>
+                    <div className="text-[10px] text-zinc-500">
+                        Ref. lap {fmtLap(race.track.optLapTime)} · Overtaking {overtakingLabel(race.track.ovtkMultiplier)}
+                    </div>
                 </div>
                 <div className="flex w-full items-center gap-2 lg:w-auto">
                     {playerDone && (
@@ -149,26 +155,28 @@ export default function Race({ race, onExit }) {
                 </div>
 
                 <div className={`${tab === "race" ? "flex" : "hidden"} flex-col gap-3 lg:flex`}>
-                    <WeatherPanel wet={race.wet} rain={race.rain} forecast={fc} compact />
-                    <RaceControlBanner race={race} onRestart={restart} />
-                    <div className={`relative rounded-lg border ${mapBorder} bg-zinc-900/60 p-3`}>
-                        <TrackMap race={race} standings={standings} lap={lap} />
-                        {!started && (
-                            <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-zinc-950/60">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setStarted(true);
-                                        setPaused(false);
-                                    }}
-                                    className="flex items-center gap-2 rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
-                                >
-                                    <Play size={16} /> Lights out
-                                </button>
-                            </div>
-                        )}
+                    <div className="flex flex-col gap-3">
+                        <WeatherPanel wet={race.wet} rain={race.rain} forecast={fc} compact />
+                        <RaceControlBanner race={race} onRestart={restart} />
+                        <div className={`relative rounded-lg border ${mapBorder} bg-zinc-900/60 p-3`}>
+                            <TrackMap race={race} standings={standings} lap={lap} />
+                            {!started && (
+                                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-zinc-950/60">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setStarted(true);
+                                            setPaused(false);
+                                        }}
+                                        className="flex items-center gap-2 rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                                    >
+                                        <Play size={16} /> Lights out
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <MobileCarStrip standings={standings} onOpen={() => setTab("cars")} />
                     </div>
-                    <MobileCarStrip standings={standings} onOpen={() => setTab("cars")} />
                     <EventFeed events={race.events} />
                 </div>
 

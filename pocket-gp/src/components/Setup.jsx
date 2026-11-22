@@ -3,6 +3,7 @@ import { Dices, Flag, RefreshCw } from "lucide-react";
 import { DRIVERS, TRACKS } from "../data/index.js";
 import { RACE_FRACTIONS, TYRE_IDS, TYRES } from "../engine/constants.js";
 import { allowedTyres, lapsTotalFor, wearPerLap } from "../engine/pace.js";
+import { overtakingLabel } from "../engine/format.js";
 import { createRng } from "../engine/rng.js";
 import { createWeather, forecast, rainAt, waterAt } from "../engine/weather.js";
 import { TyreBadge } from "./Tyre.jsx";
@@ -124,9 +125,7 @@ export default function Setup({ initial, onRunQualifying }) {
                         </div>
                         <div>
                             Overtaking{" "}
-                            <span className="font-mono text-zinc-200">
-                                {track.ovtkMultiplier >= 8 ? "very hard" : track.ovtkMultiplier >= 5 ? "hard" : track.ovtkMultiplier >= 3 ? "normal" : "easy"}
-                            </span>
+                            <span className="font-mono text-zinc-200">{overtakingLabel(track.ovtkMultiplier)}</span>
                         </div>
                     </div>
                 </Card>
@@ -183,7 +182,7 @@ export default function Setup({ initial, onRunQualifying }) {
                 </Card>
 
                 {myDrivers.map((d) => (
-                    <Card key={d.code} title={`Starting tyre — ${d.code} ${d.name} (qualifying and race)`}>
+                    <Card key={d.code} title={`Starting tyre — ${d.name}`}>
                         <div className="grid grid-cols-[repeat(auto-fit,minmax(4.5rem,1fr))] gap-1.5">
                             {TYRE_IDS.map((id) => {
                                 const t = TYRES[id];

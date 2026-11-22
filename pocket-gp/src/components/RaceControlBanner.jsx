@@ -1,6 +1,8 @@
 import { Flag, Play, ShieldAlert } from "lucide-react";
 import { fmtClock } from "../engine/format.js";
 
+const VSC_ENDING_S = 10; // race seconds before the end of a virtual safety car in which "ending" is shown
+
 const STYLE = {
     vsc: "border-amber-500/60 bg-amber-500/10 text-amber-200",
     sc: "border-amber-500/60 bg-amber-500/10 text-amber-200",
@@ -15,13 +17,21 @@ export default function RaceControlBanner({ race, onRestart }) {
     let title;
     let text;
     if (c.mode === "vsc") {
-        title = "Virtual safety car";
-        text = "Everybody slows down and holds the gaps. No overtaking. A stop through the pits costs less.";
+        if (c.until - race.clock <= VSC_ENDING_S) {
+            title = "Virtual safety car ending";
+            text = "Racing resumes any moment. Get ready to push.";
+        } else {
+            title = "Virtual safety car";
+            text = "Everybody slows down and holds the gaps. No overtaking. A stop through the pits costs less.";
+        }
     } else if (c.mode === "sc") {
-        title = "Safety car";
-        text = c.ending
-            ? "The safety car comes in at the end of this lap. Racing resumes at the line."
-            : "The field closes up behind the safety car. No overtaking. A stop through the pits costs much less.";
+        if (c.ending) {
+            title = "Safety car in this lap";
+            text = "The safety car comes in at the end of this lap. Racing resumes at the line.";
+        } else {
+            title = "Safety car";
+            text = "The field closes up behind the safety car. No overtaking. A stop through the pits costs much less.";
+        }
     } else {
         title = "Red flag";
         if (c.phase === "stopping") text = "The race is stopped. The cars are driving to the pit lane.";

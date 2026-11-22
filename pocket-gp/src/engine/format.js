@@ -31,6 +31,14 @@ export function surfaceLabel(wet) {
     return "Flooded";
 }
 
+// How hard it is to overtake on a circuit (its ovtkMultiplier, 1 easy - 10 extreme); the single source for every screen
+export function overtakingLabel(ovtk) {
+    if (ovtk >= 8) return "very hard";
+    if (ovtk >= 5) return "hard";
+    if (ovtk >= 3) return "normal";
+    return "easy";
+}
+
 export function rainLabel(rain) {
     if (rain < 5) return "None";
     if (rain < 25) return "Drizzle";
