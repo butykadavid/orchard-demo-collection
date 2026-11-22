@@ -116,6 +116,12 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         lapStart: 0,
         lastLap: null,
         bestLap: null,
+        lapLog: [], // one entry per completed lap for the post-race statistics: { lap, time, pos, slow } (slow = pit, neutralised or standing-start lap)
+        pitLog: [], // one entry per tyre change: { lap, tyre, stand, red } (the change comes at the end of `lap`; stand = seconds standing still)
+        lapPit: false, // a stop was made (or still going on) during the lap in progress
+        lapNeutral: false, // part of the lap in progress was run under a safety car, virtual safety car or red flag
+        overtakes: 0, // passes made on track
+        overtaken: 0, // times passed on track
         finished: false,
         finishTime: null,
         sectorTimes: new Float64Array(lapsTotal * SECTORS + 2).fill(-1),
@@ -144,6 +150,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         playerTeam,
         teamBusyUntil: new Map(), // team -> race clock until which its pit crew is busy (one car is serviced at a time)
         control: createControl(), // safety car, virtual safety car and red flag state
+        counts: { sc: 0, vsc: 0, red: 0 }, // how often each neutralisation was called
         weatherShift: 0, // laps the weather has moved on while the race stood still under a red flag
     };
 }
@@ -278,6 +285,8 @@ function startPit(race, car, tyre) {
     const end = start + rollStopTime(race.rng) + repair;
     race.teamBusyUntil.set(car.team, race.clock + end + PIT_TEAM_BUFFER);
     car.pit = { elapsed: 0, laneSpeed: PIT_LANE_SPAN / drive, arrive, start, end, total: end + drive / 2, tyre, swapped: false };
+    car.pitLog.push({ lap: Math.floor(car.pos) + 1, tyre, stand: end - start, red: false });
+    car.lapPit = true;
     car.pitRequest = null;
     car.punctured = false;
     car.recover = 0;
@@ -371,6 +380,7 @@ function deploySafetyCar(race) {
     const c = race.control;
     const lead = Math.max(race.order[0].pos, 0);
     c.mode = "sc";
+    race.counts.sc++;
     c.since = race.clock;
     c.ending = false;
     c.lapsLeft = Math.max(1, Math.min(race.rng.int(SC_LAPS[0], SC_LAPS[1] + 1) - 1, Math.floor(race.lapsTotal - lead) - 2));
@@ -383,6 +393,7 @@ function deployVirtualSafetyCar(race) {
     const lead = Math.max(race.order[0].pos, 0);
     const laps = Math.min(race.rng.range(VSC_LAPS[0], VSC_LAPS[1]), race.lapsTotal - lead - 1);
     c.mode = "vsc";
+    race.counts.vsc++;
     c.since = race.clock;
     c.until = race.clock + laps * race.track.optLapTime;
     calmField(race);
@@ -410,6 +421,7 @@ function startRedFlag(race, rain) {
     }
     calmField(race);
     c.mode = "red";
+    race.counts.red++;
     c.phase = "stopping";
     c.since = race.clock;
     c.ending = false;
@@ -507,6 +519,9 @@ export function restartRace(race) {
         car.tyreState = 100;
         car.stops += 1; // the free change counts as a stop and shows up in the tyre history
         car.allTyres += tyre;
+        car.pitLog.push({ lap: lineLap, tyre, stand: 0, red: true });
+        car.lapPit = false;
+        car.lapNeutral = false;
         car.damage = 0;
         car.punctured = false;
         car.recover = 0;
@@ -592,6 +607,7 @@ export function stepRace(race, dt) {
 
         const oldPos = car.pos;
         car.prevPos = oldPos;
+        if (neutral) car.lapNeutral = true;
 
         // Pit phase: drive down the pit lane, stand still for the service (tyres swapped halfway through it), drive on
         if (car.pit) {
@@ -765,6 +781,7 @@ export function stepRace(race, dt) {
                 if (!car.regrid) {
                     const lap = crossTime - car.lapStart;
                     car.lastLap = lap;
+                    car.lapLog.push({ lap: fNew, time: lap, pos: order.indexOf(car) + 1, slow: fNew === 1 || car.lapPit || car.lapNeutral || !!car.pit });
                     if (car.bestLap === null || lap < car.bestLap) car.bestLap = lap;
                     if (fNew >= 2 && (!race.fastest || lap < race.fastest.time)) {
                         race.fastest = { time: lap, code: car.code, name: car.name, lap: fNew };
@@ -773,6 +790,8 @@ export function stepRace(race, dt) {
                 }
             }
             car.regrid = false;
+            car.lapPit = !!car.pit;
+            car.lapNeutral = neutral;
             car.lapStart = crossTime;
             car.noise = lapNoise(rng);
             car.trafficLoss = (car.trafficLoss + car.lossAcc) / 2;
@@ -788,6 +807,8 @@ export function stepRace(race, dt) {
             const t = car.pass.target;
             if (!car.pass.announced && car.pos > t.pos) {
                 car.pass.announced = true;
+                car.overtakes++;
+                t.overtaken++;
                 pushEvent(race, "overtake", `${car.code} passes ${t.code}`);
             }
             if (car.pos >= t.pos + MIN_GAP_S / car.pace) car.pass = null;

@@ -1,16 +1,29 @@
+import { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { fmtGap, fmtLap } from "../engine/format.js";
+import { buildRaceStats } from "../engine/stats.js";
 import { TyreBadge } from "./Tyre.jsx";
+import { LapTimesChart, PositionsChart, StrategyPanel, SummaryPanel } from "./RaceStats.jsx";
 
-export default function RaceResults({ standings, fastest, playerTeam, onBack }) {
+const TABS = [
+    { id: "result", label: "Classification" },
+    { id: "summary", label: "Summary" },
+    { id: "positions", label: "Positions" },
+    { id: "laps", label: "Lap times" },
+    { id: "strategy", label: "Strategy" },
+];
+
+export default function RaceResults({ race, standings, fastest, playerTeam, onBack }) {
     const mine = standings.filter((s) => s.car.isPlayer);
+    const [tab, setTab] = useState("result");
+    const stats = useMemo(() => buildRaceStats(race, standings), [race, standings]);
 
     return (
         <div className="fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-zinc-950/85 p-3 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-xl border border-zinc-800 bg-zinc-900 p-4 shadow-2xl">
+            <div className="my-auto w-full max-w-3xl rounded-xl border border-zinc-800 bg-zinc-900 p-4 shadow-2xl">
                 <div className="mb-3 flex items-center gap-2">
                     <Trophy size={18} className="text-amber-400" />
-                    <h2 className="text-lg font-bold tracking-tight">Final classification</h2>
+                    <h2 className="text-lg font-bold tracking-tight">{race.track.location}</h2>
                     {mine.length > 0 && (
                         <span className="ml-auto text-sm text-zinc-400">
                             {playerTeam}: {mine.map((s) => `${s.car.code} P${s.position}`).join(" · ")}
@@ -18,59 +31,81 @@ export default function RaceResults({ standings, fastest, playerTeam, onBack }) 
                     )}
                 </div>
 
-                <table className="w-full text-xs">
-                    <thead className="text-left text-[10px] uppercase tracking-wider text-zinc-500">
-                        <tr className="border-b border-zinc-800">
-                            <th className="w-8 py-1.5">Pos</th>
-                            <th className="py-1.5">Driver</th>
-                            <th className="py-1.5 text-right">Gap</th>
-                            <th className="py-1.5 text-right">Best lap</th>
-                            <th className="py-1.5 pl-3">Tyres</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {standings.map((s) => (
-                            <tr key={s.car.code} className={s.car.isPlayer ? "bg-red-500/15" : "odd:bg-zinc-800/30"}>
-                                <td className="py-0.5 font-mono text-zinc-400">{s.position}</td>
-                                <td className="py-0.5">
-                                    <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: s.car.color }} />
-                                    <span className="font-semibold">{s.car.code}</span>{" "}
-                                    <span className="text-zinc-400">{s.car.name}</span>
-                                </td>
-                                <td className="py-0.5 text-right font-mono">
-                                    {s.car.dsq ? (
-                                        <span className="text-red-400" title={s.car.dsq.reason}>
-                                            DSQ · {s.car.dsq.reason}
-                                        </span>
-                                    ) : s.car.dnf ? (
-                                        <span className="text-red-400" title={s.car.dnf.reason}>
-                                            DNF L{s.car.dnf.lap} · {s.car.dnf.reason}
-                                        </span>
-                                    ) : s.position === 1 ? (
-                                        "Winner"
-                                    ) : (
-                                        fmtGap(s.gapLeader, s.lapsBehindLeader)
-                                    )}
-                                </td>
-                                <td className={`py-0.5 text-right font-mono ${fastest?.code === s.car.code ? "text-fuchsia-400" : ""}`}>
-                                    {fmtLap(s.car.bestLap)}
-                                </td>
-                                <td className="py-0.5 pl-3">
-                                    <span className="flex gap-0.5">
-                                        {s.car.allTyres.split("").map((t, i) => (
-                                            <TyreBadge key={i} id={t} size={14} />
-                                        ))}
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                <div className="mb-3 flex overflow-x-auto rounded-md border border-zinc-700">
+                    {TABS.map((t) => (
+                        <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setTab(t.id)}
+                            className={`flex-1 whitespace-nowrap px-3 py-1.5 text-xs font-medium ${tab === t.id ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`}
+                        >
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
 
-                {fastest && (
-                    <p className="mt-2 text-xs text-fuchsia-400">
-                        Fastest lap: {fastest.name} — {fmtLap(fastest.time)} (lap {fastest.lap})
-                    </p>
+                {tab === "summary" && <SummaryPanel stats={stats} />}
+                {tab === "positions" && <PositionsChart stats={stats} />}
+                {tab === "laps" && <LapTimesChart stats={stats} />}
+                {tab === "strategy" && <StrategyPanel stats={stats} />}
+                {tab === "result" && (
+                    <>
+
+                        <table className="w-full text-xs">
+                            <thead className="text-left text-[10px] uppercase tracking-wider text-zinc-500">
+                                <tr className="border-b border-zinc-800">
+                                    <th className="w-8 py-1.5">Pos</th>
+                                    <th className="py-1.5">Driver</th>
+                                    <th className="py-1.5 text-right">Gap</th>
+                                    <th className="py-1.5 text-right">Best lap</th>
+                                    <th className="py-1.5 pl-3">Tyres</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {standings.map((s) => (
+                                    <tr key={s.car.code} className={s.car.isPlayer ? "bg-red-500/15" : "odd:bg-zinc-800/30"}>
+                                        <td className="py-0.5 font-mono text-zinc-400">{s.position}</td>
+                                        <td className="py-0.5">
+                                            <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: s.car.color }} />
+                                            <span className="font-semibold">{s.car.code}</span>{" "}
+                                            <span className="text-zinc-400">{s.car.name}</span>
+                                        </td>
+                                        <td className="py-0.5 text-right font-mono">
+                                            {s.car.dsq ? (
+                                                <span className="text-red-400" title={s.car.dsq.reason}>
+                                                    DSQ · {s.car.dsq.reason}
+                                                </span>
+                                            ) : s.car.dnf ? (
+                                                <span className="text-red-400" title={s.car.dnf.reason}>
+                                                    DNF L{s.car.dnf.lap} · {s.car.dnf.reason}
+                                                </span>
+                                            ) : s.position === 1 ? (
+                                                "Winner"
+                                            ) : (
+                                                fmtGap(s.gapLeader, s.lapsBehindLeader)
+                                            )}
+                                        </td>
+                                        <td className={`py-0.5 text-right font-mono ${fastest?.code === s.car.code ? "text-fuchsia-400" : ""}`}>
+                                            {fmtLap(s.car.bestLap)}
+                                        </td>
+                                        <td className="py-0.5 pl-3">
+                                            <span className="flex gap-0.5">
+                                                {s.car.allTyres.split("").map((t, i) => (
+                                                    <TyreBadge key={i} id={t} size={14} />
+                                                ))}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        {fastest && (
+                            <p className="mt-2 text-xs text-fuchsia-400">
+                                Fastest lap: {fastest.name} — {fmtLap(fastest.time)} (lap {fastest.lap})
+                            </p>
+                        )}
+                    </>
                 )}
 
                 <div className="mt-4 flex justify-end">

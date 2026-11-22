@@ -201,7 +201,7 @@ export default function Race({ race, onExit }) {
             </nav>
 
             {race.finished && (
-                <RaceResults standings={standings} fastest={race.fastest} playerTeam={race.playerTeam} onBack={onExit} />
+                <RaceResults race={race} standings={standings} fastest={race.fastest} playerTeam={race.playerTeam} onBack={onExit} />
             )}
         </div>
     );
