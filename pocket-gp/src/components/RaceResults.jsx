@@ -3,7 +3,7 @@ import { Trophy } from "lucide-react";
 import { fmtGap, fmtLap } from "../engine/format.js";
 import { buildRaceStats } from "../engine/stats.js";
 import { TyreBadge } from "./Tyre.jsx";
-import { LapTimesChart, PositionsChart, StrategyPanel, SummaryPanel } from "./RaceStats.jsx";
+import { LapTimesChart, PositionsChart, StrategyPanel, SummaryPanel, TraitsPanel } from "./RaceStats.jsx";
 
 const TABS = [
     { id: "result", label: "Classification" },
@@ -11,6 +11,7 @@ const TABS = [
     { id: "positions", label: "Positions" },
     { id: "laps", label: "Lap times" },
     { id: "strategy", label: "Strategy" },
+    { id: "traits", label: "Traits" },
 ];
 
 export default function RaceResults({ race, standings, fastest, playerTeam, onBack }) {
@@ -48,6 +49,7 @@ export default function RaceResults({ race, standings, fastest, playerTeam, onBa
                 {tab === "positions" && <PositionsChart stats={stats} />}
                 {tab === "laps" && <LapTimesChart stats={stats} />}
                 {tab === "strategy" && <StrategyPanel stats={stats} />}
+                {tab === "traits" && <TraitsPanel stats={stats} />}
                 {tab === "result" && (
                     <>
 

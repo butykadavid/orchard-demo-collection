@@ -1,4 +1,5 @@
 import { fmtLap } from "./format.js";
+import { fxLines, getTrait } from "./traits.js";
 
 // Post-race statistics, built from the per-lap, pit and overtake records the race keeps for every car
 
@@ -28,6 +29,7 @@ function buildStints(car, lapsTotal) {
 
 export function buildRaceStats(race, standings) {
     const lapsTotal = race.lapsTotal;
+    const traits = buildTraitStats(race, standings);
 
     const rows = standings.map((s) => {
         const car = s.car;
@@ -107,5 +109,35 @@ export function buildRaceStats(race, standings) {
         stops: rows.reduce((n, r) => n + r.stops, 0),
     };
 
-    return { rows, awards, summary, lapsTotal };
+    return { rows, awards, summary, lapsTotal, traits };
+}
+
+// What the traits did in the race: for every car that ran traits, each trait's effect at this circuit and its tally, plus the
+// moments in which a trait visibly changed something (see the trait bookkeeping in race.js). Pace traits only show up as seconds.
+function buildTraitStats(race, standings) {
+    const cars = standings.map((s) => ({ car: s.car, position: s.position })).filter((x) => x.car.setup.traitFx.length > 0);
+    const drivers = cars.map(({ car, position }) => ({
+        code: car.code,
+        name: car.name,
+        team: car.team,
+        color: car.color,
+        isPlayer: car.isPlayer,
+        position,
+        status: car.dsq ? "dsq" : car.dnf ? "dnf" : "finished",
+        traits: car.setup.traitFx.map((t) => {
+            const tally = car.traitTally[t.id];
+            return {
+                id: t.id,
+                name: getTrait(t.id)?.name ?? t.id,
+                lines: fxLines(t.fx),
+                pace: tally?.pace ?? 0, // seconds gained (negative: lost) over the race
+                passes: tally?.passes ?? 0, // expected extra passes made
+                defended: tally?.defended ?? 0, // expected passes kept off the car
+                risk: (tally?.errors ?? 0) + (tally?.fails ?? 0), // expected extra errors and breakdowns (a chance, 0.05 = 5%)
+            };
+        }),
+    }));
+    const colors = new Map(cars.map((x) => [x.car.code, x.car.color]));
+    const moments = race.traitLog.map((m) => ({ ...m, color: colors.get(m.code) }));
+    return { drivers, moments };
 }

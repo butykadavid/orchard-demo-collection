@@ -232,6 +232,142 @@ export function StrategyPanel({ stats }) {
     );
 }
 
+const signed = (v, digits = 1) => (v > 0 ? "+" : v < 0 ? "-" : "") + Math.abs(v).toFixed(digits);
+const tone = (v, bad = false) => (Math.abs(v) < 0.05 ? "text-zinc-600" : (v > 0) !== bad ? "text-emerald-400" : "text-red-400");
+
+// Cell with a value that is good when positive (or bad, for the risk column), dimmed while it is practically nothing
+function FxCell({ value, digits = 1, unit = "", bad = false, scale = 1 }) {
+    const v = value * scale;
+    return <td className={`py-0.5 text-right font-mono ${tone(v, bad)}`}>{Math.abs(v) < 0.05 ? "-" : `${signed(v, digits)}${unit}`}</td>;
+}
+
+export function TraitsPanel({ stats }) {
+    const { drivers, moments } = stats.traits;
+    const hasMine = drivers.some((d) => d.isPlayer);
+    const [mineOnly, setMineOnly] = useState(hasMine);
+
+    if (drivers.length === 0) return <p className="py-6 text-center text-sm text-zinc-400">No car ran any traits in this race.</p>;
+
+    const shown = mineOnly ? drivers.filter((d) => d.isPlayer) : drivers;
+    const codes = new Set(shown.map((d) => d.code));
+    const list = moments.filter((m) => codes.has(m.code));
+    const good = list.filter((m) => m.good).length;
+
+    return (
+        <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+                <span>
+                    <span className="font-semibold text-emerald-400">{good} helped</span> · <span className="font-semibold text-red-400">{list.length - good} hurt</span>
+                </span>
+                {hasMine && (
+                    <div className="ml-auto flex overflow-hidden rounded-md border border-zinc-700">
+                        {[
+                            [true, "My team"],
+                            [false, "Everyone"],
+                        ].map(([v, label]) => (
+                            <button
+                                key={label}
+                                type="button"
+                                onClick={() => setMineOnly(v)}
+                                className={`px-2.5 py-1 text-[11px] font-medium ${mineOnly === v ? "bg-red-600 text-white" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div>
+                <h3 className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Moments</h3>
+                {list.length === 0 ? (
+                    <p className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-3 py-3 text-xs text-zinc-400">
+                        No trait changed the outcome of a pass, incident or damage in this race. Traits that only make the car quicker show up in the table below.
+                    </p>
+                ) : (
+                    <ul className="max-h-60 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-800/30">
+                        {list.map((m, i) => (
+                            <li key={i} className="flex items-start gap-2 border-b border-zinc-800 px-2.5 py-1.5 text-xs last:border-b-0">
+                                <span className={`mt-0.5 w-3 shrink-0 text-center font-mono font-bold ${m.good ? "text-emerald-400" : "text-red-400"}`}>{m.good ? "+" : "-"}</span>
+                                <span className="w-9 shrink-0 font-mono text-zinc-500">L{m.lap}</span>
+                                <span className="w-9 shrink-0 font-mono font-semibold" style={{ color: m.color }}>
+                                    {m.code}
+                                </span>
+                                <span className="text-zinc-300">{m.text}</span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            <div className="overflow-x-auto">
+                <h3 className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Overall effect</h3>
+                <table className="w-full text-xs">
+                    <thead className="text-left text-[10px] uppercase tracking-wider text-zinc-500">
+                        <tr className="border-b border-zinc-800">
+                            <th className="py-1.5">Driver / trait</th>
+                            <th className="py-1.5 text-right" title="Race time gained (or lost) by traits that change the pace, including the wet-weather ones">
+                                Pace
+                            </th>
+                            <th className="py-1.5 text-right" title="Expected extra passes made (negative: passes the trait cost)">
+                                Passes
+                            </th>
+                            <th className="py-1.5 text-right" title="Expected passes kept off the car (negative: extra passes conceded)">
+                                Defence
+                            </th>
+                            <th className="py-1.5 text-right" title="Extra chance of a driver error or breakdown caused by the trait">
+                                Risk
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {shown.map((d) => (
+                            <FragmentRows key={d.code} d={d} />
+                        ))}
+                    </tbody>
+                </table>
+                <p className="mt-2 text-[10px] text-zinc-500">
+                    Passes and defence are expected values: at every moment of a fight the pass chance with the trait is compared with the chance without it. Moments are logged each time such a count reaches a whole
+                    pass. Pace is the time the trait saved over the whole race, which is how a trait that is just a little quicker shows up.
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function FragmentRows({ d }) {
+    return (
+        <>
+            <tr className={d.isPlayer ? "bg-red-500/15" : "bg-zinc-800/30"}>
+                <td className="py-1" colSpan={5}>
+                    <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: d.color }} />
+                    <span className="font-semibold">{d.code}</span> <span className="text-zinc-400">{d.name}</span>
+                    <span className="ml-2 font-mono text-zinc-500">{d.status === "finished" ? `P${d.position}` : d.status === "dsq" ? "DSQ" : "DNF"}</span>
+                </td>
+            </tr>
+            {d.traits.map((t) => (
+                <tr key={t.id}>
+                    <td className="py-0.5 pl-4">
+                        <div className="text-zinc-200">{t.name}</div>
+                        <div className="text-[10px] leading-snug">
+                            {t.lines.map((l, i) => (
+                                <span key={i} className={l.bad ? "text-red-400/80" : "text-emerald-400/80"}>
+                                    {i > 0 ? " · " : ""}
+                                    {l.text}
+                                </span>
+                            ))}
+                        </div>
+                    </td>
+                    <FxCell value={t.pace} digits={1} unit=" s" />
+                    <FxCell value={t.passes} digits={1} />
+                    <FxCell value={t.defended} digits={1} />
+                    <FxCell value={t.risk} digits={1} unit="%" bad scale={100} />
+                </tr>
+            ))}
+        </>
+    );
+}
+
 function Tile({ label, value }) {
     return (
         <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-3 py-2">
