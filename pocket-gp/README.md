@@ -12,6 +12,7 @@ A modern, minimalistic web port of the old C# console Grand Prix manager, built 
 - AI drivers pick tyres and pit on their own. You manage a whole team (all of its drivers at once): each car has its own pit stop request and next tyre set.
 - Spectator mode (no team to manage).
 - Tyre rule: every car has to use at least two different compounds during the race or it is disqualified at the flag (intermediate or wet tyres exempt a car). AI drivers plan around it.
+- Race control: incidents can bring out the safety car, a virtual safety car or a red flag (also for heavy rain). Nobody can overtake under a safety car, the field closes up, stops through the pits cost less and the AI reacts to that. After a red flag everybody gets a free set of tyres (you pick yours) and the race restarts from a standing start with the lap counter carrying on.
 - Customize tab: edit the grid (drivers, teams, colours, skill, car), the circuits (laps, lap time, overtaking difficulty) and the tyre compounds (including adding your own dry compounds) for a sandbox experience. Changes are saved in the browser and can be reset to the defaults per tab or all at once.
 
 Shortcuts: `Space` pause/resume, `1`-`5` speed.

@@ -46,13 +46,15 @@ export default function TrackMap({ race, standings, lap }) {
                     .filter((car) => !car.dnf)
                     .sort((a, b) => Number(a.isPlayer) - Number(b.isPlayer))
                     .map((car) => {
-                        const frac = ((car.pos % 1) + 1) % 1;
+                        // Cars stopped under a red flag queue up in the pit lane in race order, the leader at the exit
+                        const parked = car.parked && race.control.mode === "red";
+                        const frac = parked ? PIT_EXIT - 0.006 - (car.redRank - 1) * 0.0034 : ((car.pos % 1) + 1) % 1;
                         const stagger = car.gridPos % 2 === 0 ? 3 : -3;
-                        const [x, y] = shape.place(frac, car.pit ? -PIT_OFFSET : stagger);
+                        const [x, y] = shape.place((frac + 1) % 1, car.pit || parked ? -PIT_OFFSET : stagger);
                         const position = rankOf.get(car.code);
                         const showLabel = car.isPlayer || position <= 3;
                         const color = car.color ?? "#a1a1aa";
-                        const [lx, ly] = shape.place(frac, 20);
+                        const [lx, ly] = shape.place((frac + 1) % 1, 20);
                         return (
                             <g key={car.code} opacity={car.finished ? 0.55 : 1}>
                                 <circle

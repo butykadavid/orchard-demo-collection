@@ -6,6 +6,8 @@ const KIND_STYLE = {
     dnf: "text-red-400",
     puncture: "text-orange-400",
     incident: "text-orange-300",
+    control: "text-amber-300",
+    red: "text-red-400",
 };
 
 export default function EventFeed({ events }) {

@@ -76,14 +76,15 @@ export function predictWater(weather, fraction, nowLap, lap) {
 }
 
 // Forecast for `count` laps starting at the current lap. Lap numbers are 1-based for display.
-export function forecast(weather, fraction, fromLap, lapsTotal, count = 10) {
+// `shift` is the time (in laps) the weather has moved on while the race stood still under a red flag.
+export function forecast(weather, fraction, fromLap, lapsTotal, count = 10, shift = 0) {
     const base = Math.floor(Math.max(0, fromLap));
-    const nowIdx = Math.max(0, fromLap) / fraction;
+    const nowIdx = (Math.max(0, fromLap) + shift) / fraction;
     const out = [];
     for (let k = 0; k < count; k++) {
         const lapIndex = base + k;
         if (lapIndex >= lapsTotal) break;
-        const idx = lapIndex / fraction;
+        const idx = (lapIndex + shift) / fraction;
         const rain = sample(weather.rain, idx);
         const value =
             rain < 5 || rain > 94

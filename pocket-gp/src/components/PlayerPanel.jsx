@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Wrench, X } from "lucide-react";
 import { TYRE_IDS, TYRES } from "../engine/constants.js";
+import { fieldSpeed } from "../engine/control.js";
 import { fmtGap, fmtLap } from "../engine/format.js";
 import { repairTimeFor } from "../engine/incidents.js";
 import { allowedTyres, wearPerLap } from "../engine/pace.js";
 import { pitLoss } from "../engine/pit.js";
 import { tyreRuleMet } from "../engine/rules.js";
-import { requestPit } from "../engine/race.js";
+import { requestPit, setRedFlagTyre } from "../engine/race.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
 
 export default function PlayerPanel({ race, standings }) {
@@ -46,6 +47,9 @@ function CarPanel({ race, standings, idx }) {
     const damaged = car.damage > 0.05;
     const repair = repairTimeFor(car.damage);
     const crewBusy = car.pit ? 0 : Math.max(0, (race.teamBusyUntil.get(car.team) ?? 0) - race.clock);
+    const red = race.control.mode === "red";
+    const speedF = fieldSpeed(race);
+    const redTyre = car.redTyre ?? car.tyre; // compound of the free set under a red flag
     if (car.dsq) {
         return (
             <div className="rounded-lg border border-red-900 bg-red-950/40 p-3">
@@ -141,43 +145,70 @@ function CarPanel({ race, standings, idx }) {
                 <dd className="text-right font-mono">{behind ? fmtGap(behind.gapAhead, behind.lapsBehindAhead) : "—"}</dd>
             </dl>
 
-            <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Next set</div>
-            <div className="mb-2 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
-                {TYRE_IDS.map((id) => (
+            {red ? (
+                <>
+                    <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Free tyre change</div>
+                    <div className="mb-2 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
+                        {TYRE_IDS.map((id) => (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => setRedFlagTyre(race, car.code, id)}
+                                className={`relative flex flex-col items-center gap-0.5 rounded-md border py-2.5 text-[10px] lg:py-1.5 ${redTyre === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"}`}
+                            >
+                                {suited.includes(id) && <span className="absolute right-1 top-1 h-1 w-1 rounded-full bg-emerald-400" />}
+                                <TyreBadge id={id} size={20} />
+                                {TYRES[id].name}
+                            </button>
+                        ))}
+                    </div>
+                    <p className="text-[10px] text-zinc-500">
+                        {car.parked
+                            ? `The race is stopped: a new ${TYRES[redTyre].name.toLowerCase()} set is fitted for free before the restart, and any damage is repaired.`
+                            : "The race is stopped. Choose the set for the restart while your car drives to the pit lane."}
+                    </p>
+                </>
+            ) : (
+                <>
+                    <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Next set</div>
+                    <div className="mb-2 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
+                        {TYRE_IDS.map((id) => (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => pickTyre(id)}
+                                className={`relative flex flex-col items-center gap-0.5 rounded-md border py-2.5 text-[10px] lg:py-1.5 ${next === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
+                                    }`}
+                            >
+                                {suited.includes(id) && <span className="absolute right-1 top-1 h-1 w-1 rounded-full bg-emerald-400" />}
+                                <TyreBadge id={id} size={20} />
+                                {TYRES[id].name}
+                            </button>
+                        ))}
+                    </div>
+
                     <button
-                        key={id}
                         type="button"
-                        onClick={() => pickTyre(id)}
-                        className={`relative flex flex-col items-center gap-0.5 rounded-md border py-2.5 text-[10px] lg:py-1.5 ${next === id ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
+                        disabled={!canPit && !pending}
+                        onClick={() => requestPit(race, car.code, pending ? null : next)}
+                        className={`flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-3.5 text-sm font-semibold transition-colors lg:py-2 ${pending
+                            ? "pulse-box bg-amber-500 text-zinc-950 hover:bg-amber-400"
+                            : "bg-red-600 text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
                             }`}
                     >
-                        {suited.includes(id) && <span className="absolute right-1 top-1 h-1 w-1 rounded-full bg-emerald-400" />}
-                        <TyreBadge id={id} size={20} />
-                        {TYRES[id].name}
+                        {pending ? (
+                            <>
+                                <X size={14} /> BOX THIS LAP — cancel
+                            </>
+                        ) : (
+                            <>
+                                <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : "Box this lap"}
+                            </>
+                        )}
                     </button>
-                ))}
-            </div>
-
-            <button
-                type="button"
-                disabled={!canPit && !pending}
-                onClick={() => requestPit(race, car.code, pending ? null : next)}
-                className={`flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-3.5 text-sm font-semibold transition-colors lg:py-2 ${pending
-                    ? "pulse-box bg-amber-500 text-zinc-950 hover:bg-amber-400"
-                    : "bg-red-600 text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-                    }`}
-            >
-                {pending ? (
-                    <>
-                        <X size={14} /> BOX THIS LAP — cancel
-                    </>
-                ) : (
-                    <>
-                        <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : "Box this lap"}
-                    </>
-                )}
-            </button>
-            <p className="mt-1.5 text-[10px] text-zinc-500">A stop costs about {Math.round(pitLoss(race.track) + repair)} s{damaged ? " including repairs" : ""}. You enter the pits at the end of the current lap.{crewBusy > 0.5 ? " Your crew is busy with your team mate right now: expect to wait if you come in straight away." : ""}</p>
+                    <p className="mt-1.5 text-[10px] text-zinc-500">A stop costs about {Math.round(pitLoss(race.track, speedF) + repair)} s{damaged ? " including repairs" : ""}{speedF < 1 ? " (cheaper while the field is slow)" : ""}. You enter the pits at the end of the current lap.{crewBusy > 0.5 ? " Your crew is busy with your team mate right now: expect to wait if you come in straight away." : ""}</p>
+                </>
+            )}
         </div>
     );
 }

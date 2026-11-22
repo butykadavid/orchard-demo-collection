@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { FastForward, ListOrdered, Map as MapIcon, Play, Wrench } from "lucide-react";
 import { GAP_UPDATE_TICKS, SIM_DT, SPEEDS } from "../engine/constants.js";
 import { fmtClock } from "../engine/format.js";
-import { getStandings, simulateToEnd } from "../engine/race.js";
+import { getStandings, restartRace, simulateToEnd } from "../engine/race.js";
 import { forecast } from "../engine/weather.js";
 import { useRaceLoop } from "../hooks/useRaceLoop.js";
 import EventFeed from "./EventFeed.jsx";
 import MobileCarStrip from "./MobileCarStrip.jsx";
 import PlayerPanel from "./PlayerPanel.jsx";
+import RaceControlBanner from "./RaceControlBanner.jsx";
 import RaceResults from "./RaceResults.jsx";
 import SpeedControls from "./SpeedControls.jsx";
 import TimingTower from "./TimingTower.jsx";
@@ -75,7 +76,7 @@ export default function Race({ race, onExit }) {
     });
     const leader = standings[0].car;
     const lap = Math.min(race.lapsTotal, Math.max(0, Math.floor(leader.pos)) + 1);
-    const fc = forecast(race.weather, race.fraction, Math.max(0, leader.pos), race.lapsTotal, 10);
+    const fc = forecast(race.weather, race.fraction, Math.max(0, leader.pos), race.lapsTotal, 10, race.weatherShift);
     const players = race.cars.filter((c) => c.isPlayer);
     const playerDone = players.length > 0 && players.every((c) => c.finished || c.dnf) && !race.finished;
 
@@ -97,6 +98,16 @@ export default function Race({ race, onExit }) {
         simulateToEnd(race, SIM_DT);
         force();
     };
+
+    const restart = () => {
+        restartRace(race);
+        setPaused(false);
+        setStarted(true);
+        force();
+    };
+
+    const mode = race.control.mode;
+    const mapBorder = mode === "red" ? "border-red-500/70" : mode === "green" ? "border-zinc-800" : "border-amber-500/60";
 
     return (
         <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-3 p-3 pb-20 lg:pb-3">
@@ -139,7 +150,8 @@ export default function Race({ race, onExit }) {
 
                 <div className={`${tab === "race" ? "flex" : "hidden"} flex-col gap-3 lg:flex`}>
                     <WeatherPanel wet={race.wet} rain={race.rain} forecast={fc} compact />
-                    <div className="relative rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+                    <RaceControlBanner race={race} onRestart={restart} />
+                    <div className={`relative rounded-lg border ${mapBorder} bg-zinc-900/60 p-3`}>
                         <TrackMap race={race} standings={standings} lap={lap} />
                         {!started && (
                             <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-zinc-950/60">

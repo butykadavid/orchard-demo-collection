@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
-import { SIM_DT } from "../engine/constants.js";
+import { RED_WARP, SIM_DT } from "../engine/constants.js";
 import { stepRace } from "../engine/race.js";
 
 // Drives the fixed-timestep simulation from requestAnimationFrame.
@@ -20,7 +20,9 @@ export function useRaceLoop(race, { running, speed }) {
                 acc.current += dt * speed;
                 let steps = 0;
                 while (acc.current >= SIM_DT && steps < 400 && !race.finished) {
-                    stepRace(race, SIM_DT);
+                    // While the cars wait in the pit lane under a red flag nothing happens: time runs faster
+                    const waiting = race.control.mode === "red" && race.control.phase === "waiting";
+                    stepRace(race, waiting ? SIM_DT * RED_WARP : SIM_DT);
                     acc.current -= SIM_DT;
                     steps++;
                 }

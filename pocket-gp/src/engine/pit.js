@@ -4,10 +4,12 @@ import { PIT_LANE_SPAN, PIT_SPEED, PIT_STOP_EXPECTED, PIT_STOP_MAX, PIT_STOP_MIN
 export const pitDriveTime = (track) => track.pitLane / PIT_SPEED;
 
 // Time lost by driving through the pit lane instead of racing past it (s). The pit lane replaces PIT_LANE_SPAN of a lap.
-export const pitLaneLoss = (track) => pitDriveTime(track) - PIT_LANE_SPAN * track.optLapTime;
+// `fieldSpeed` is the speed of the cars on track relative to racing speed: behind a safety car they cover that stretch slowly,
+// so the pit lane costs less.
+export const pitLaneLoss = (track, fieldSpeed = 1) => pitDriveTime(track) - (PIT_LANE_SPAN * track.optLapTime) / fieldSpeed;
 
 // Expected total time lost by a normal stop, without repairs or waiting for a team mate (s)
-export const pitLoss = (track) => pitLaneLoss(track) + PIT_STOP_EXPECTED;
+export const pitLoss = (track, fieldSpeed = 1) => pitLaneLoss(track, fieldSpeed) + PIT_STOP_EXPECTED;
 
 // Time a car has to wait for its team mate's service if it entered the pit lane now (s)
 export function queueWait(race, car) {

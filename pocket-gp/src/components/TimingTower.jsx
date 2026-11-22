@@ -38,7 +38,7 @@ export default function TimingTower({ standings, fastestCode }) {
                                 <WearBar value={car.tyreState} className="w-full" />
                             </span>
                             <span className="text-right font-mono text-zinc-400">
-                                {dsq ? "DSQ" : car.finished ? "FIN" : out ? "OUT" : car.pit ? <span className="text-amber-400">PIT</span> : car.punctured ? <span className="text-red-400">PNC</span> : (
+                                {dsq ? "DSQ" : car.finished ? "FIN" : out ? "OUT" : car.pit || car.parked ? <span className="text-amber-400">PIT</span> : car.punctured ? <span className="text-red-400">PNC</span> : (
                                     <>
                                         {car.damage > 0.05 && (
                                             <span className="mr-1 text-orange-400" title={`Damage: +${car.damage.toFixed(1)} s/lap`}>

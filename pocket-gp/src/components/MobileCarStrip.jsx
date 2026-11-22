@@ -17,7 +17,7 @@ export default function MobileCarStrip({ standings, onOpen }) {
                         ? "Retired"
                         : car.finished
                             ? "Finished"
-                            : car.pit
+                            : car.pit || car.parked
                                 ? "In pit lane"
                                 : car.pitRequest !== null
                                     ? "BOX this lap"

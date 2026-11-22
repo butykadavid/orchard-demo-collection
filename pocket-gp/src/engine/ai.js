@@ -22,6 +22,7 @@ import {
     TYRE_IDS,
 } from "./constants.js";
 import { cliffPenalty, lapTimeFor, overtakeRate, punctureHazard, tyrePace, wearPerLap } from "./pace.js";
+import { fieldSpeed, weatherLapOf } from "./control.js";
 import { repairTimeFor } from "./incidents.js";
 import { pitLoss, queueWait } from "./pit.js";
 import { legalTyres, tyreRuleMet } from "./rules.js";
@@ -70,24 +71,34 @@ function buildOutlook(wet, R, lapsTotal, track) {
     const stint = (c, j, n) => wearCost[c][n] + pace[c][j + n] - pace[c][j];
 
     // g[j] = cheapest way to cover laps j..R-1 starting on a fresh set (any number of stops), gc[j][c] per compound
+    // gn[j][c] = the stint length (laps) that achieves it
     const g = new Array(R + 1);
     const gc = new Array(R + 1);
+    const gn = new Array(R + 1);
     g[R] = { cost: 0, tyre: "m" };
     gc[R] = {};
+    gn[R] = {};
     for (let j = R - 1; j >= 0; j--) {
         const row = {};
+        const rowN = {};
         let best = { cost: Infinity, tyre: "m" };
         for (const c of TYRE_IDS) {
             let bestC = Infinity;
+            let bestN = 1;
             for (let n = 1; n <= R - j; n++) {
                 const cost = stint(c, j, n) + (j + n < R ? stopCost + g[j + n].cost : 0);
-                if (cost < bestC) bestC = cost;
+                if (cost < bestC) {
+                    bestC = cost;
+                    bestN = n;
+                }
             }
             row[c] = bestC;
+            rowN[c] = bestN;
             if (bestC < best.cost) best = { cost: bestC, tyre: c };
         }
         g[j] = best;
         gc[j] = row;
+        gn[j] = rowN;
     }
 
     // Compounds that are competitive (within the margin of the fastest) at some point of the race
@@ -99,7 +110,7 @@ function buildOutlook(wet, R, lapsTotal, track) {
         return false;
     });
 
-    return { R, wet, lapsTotal, stopCost, stint, g, gc, candidates, pace };
+    return { R, wet, lapsTotal, stopCost, stint, g, gc, gn, candidates, pace };
 }
 
 // Cheapest way to cover laps j.. starting on a fresh set; `legal` (compounds that satisfy the tyre rule) limits the first compound
@@ -129,10 +140,10 @@ function bestStay(o, tyre, state, damage = 0, held = null, legal = null) {
     return best;
 }
 
-function outlookFor(car, race, pos) {
-    const R = Math.max(1, race.lapsTotal - Math.floor(pos) - 1);
-    const leaderPos = Math.max(race.order[0].pos, 0);
-    const wet = wetProfile(race.weather, race.fraction, leaderPos, race.wet, R, car.foresight ?? 1);
+// `laps` overrides the number of laps still to run (by default the laps after the one the car is in)
+function outlookFor(car, race, pos, laps = null) {
+    const R = laps ?? Math.max(1, race.lapsTotal - Math.floor(pos) - 1);
+    const wet = wetProfile(race.weather, race.fraction, weatherLapOf(race), race.wet, R, car.foresight ?? 1);
     return buildOutlook(wet, R, race.lapsTotal, race.track);
 }
 
@@ -261,6 +272,25 @@ export function emergencyTyre(race, car) {
     return cheapest(outlookFor(car, race, car.pos), 0, legal).tyre;
 }
 
+// Free tyre change under a red flag: the tyre and the new stint plan that cover the `laps` laps still to run most cheaply
+// in the weather expected at the restart (a compound that satisfies the tyre rule if it is not met yet).
+// A bot that has stops left in its plan treats the free set like a stop it never had to pay for.
+export function planRestart(race, car, laps) {
+    const o = outlookFor(car, race, car.pos, Math.max(1, laps));
+    const legal = tyreRuleMet(car.allTyres) ? null : legalTyres(car.allTyres);
+    const { tyre } = cheapest(o, 0, legal);
+    const plan = [];
+    let lap = 0;
+    let c = tyre;
+    while (lap < o.R) {
+        const n = o.gn[lap][c];
+        plan.push({ tyre: c, laps: n });
+        lap += n;
+        if (lap < o.R) c = o.g[lap].tyre;
+    }
+    return { tyre, plan };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Traffic and rivals. A bot only reasons about what a team can see on track (positions, pace, tyre state);
 // it never reads the plans of other cars, human or bot, but assumes how they will behave.
@@ -269,7 +299,7 @@ export function emergencyTyre(race, car) {
 const freshPace = (race, car, tyre) => lapTimeFor(car.driver, race.track, tyre, 100, race.wet, 0);
 
 // Cars that are racing on track (not retired, finished or in the pit lane)
-const racingRivals = (race, car) => race.cars.filter((c) => c !== car && !c.dnf && !c.finished && !c.pit && c.pos >= 0);
+const racingRivals = (race, car) => race.cars.filter((c) => c !== car && !c.dnf && !c.finished && !c.pit && !c.parked && c.pos >= 0);
 
 // Time per lap the bot is losing behind a slower car (L) and how many laps it expects to remain stuck (n).
 // Stuck for longer when the car ahead is about as fast or the track is hard to pass on; a damaged car is slower,
@@ -344,6 +374,9 @@ function respreadPlan(car, laps) {
 // On top of that they react to traffic without abandoning the plan: stuck behind a slower car, or facing a
 // rejoin into a queue, they pull a stop forward (to get into clean air or undercut) or push it back (overcut,
 // or let the queue clear) by a few laps, if that saves time. Damage counts in all of these comparisons.
+// Under a safety car or virtual safety car the field is slow, so a stop through the pit lane costs much less: bots weigh
+// that cheaper stop against staying out (and paying the full price later), which brings in cars with worn tyres or a stop
+// due soon. Nobody can pass while the race is neutralised, so traffic and undercuts play no part then.
 export function decideBotPit(car, race, pos = car.pos) {
     const remaining = race.lapsTotal - Math.floor(pos) - 1;
     if (remaining < 1) return null;
@@ -371,15 +404,19 @@ export function decideBotPit(car, race, pos = car.pos) {
     const stopNow0 = o.stopCost + repair + first.cost + bias;
 
     // Costs with the traffic around: time lost while stuck, the rejoin position, and the undercut/cover value
-    const held = heldLoss(car, race, o);
+    const speedF = fieldSpeed(race);
+    const neutral = speedF < 1;
+    const nowStop = neutral ? pitLoss(race.track, speedF) : o.stopCost; // what a stop made right now costs
+    const held = neutral ? null : heldLoss(car, race, o);
     const rivals = racingRivals(race, car);
     const flatTraffic = AI_TRAFFIC_BASE + AI_TRAFFIC_PER_OVTK * race.track.ovtkMultiplier;
     // The crew can only service one car of the team at a time: if a team mate is in the box, stopping now means waiting.
     // That is a tactical cost only (it passes), so it is not part of the plan soundness checks above.
     const wait = queueWait(race, car);
     const stopCostWith = (tyre, futureCost) => {
-        const traffic = clamp(rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) - flatTraffic, -AI_CLEAN_AIR_BONUS, AI_TRAFFIC_MAX);
-        return o.stopCost + wait + traffic - positionBonus(car, race, pos, tyre, rivals, stopIn) + repair + futureCost + bias;
+        const traffic = neutral ? 0 : clamp(rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) - flatTraffic, -AI_CLEAN_AIR_BONUS, AI_TRAFFIC_MAX);
+        const bonus = neutral ? 0 : positionBonus(car, race, pos, tyre, rivals, stopIn);
+        return nowStop + wait + traffic - bonus + repair + futureCost + bias;
     };
     const stay = held ? bestStay(o, car.tyre, car.tyreState, car.damage, held, legal) : stay0;
 
@@ -393,13 +430,13 @@ export function decideBotPit(car, race, pos = car.pos) {
             if (next && !worn) {
                 const margin = AI_TRAFFIC_MARGIN / (car.aggression ?? 1);
                 const stopNext = stopCostWith(next.tyre, o.gc[0][next.tyre]);
-                // Early stop: out of the traffic or ahead of a rival
-                if (!due && plannedStop - stintLaps <= AI_TRAFFIC_FLEX && stopNext < stay - margin) {
+                // Early stop: out of the traffic or ahead of a rival (under a safety car: any stop that the cheap pit lane makes worthwhile)
+                if (!due && (neutral || plannedStop - stintLaps <= AI_TRAFFIC_FLEX) && stopNext < stay - margin) {
                     respreadPlan(car, remaining);
                     return next.tyre;
                 }
                 // Late stop: the rejoin would be in a queue (or a rival's stop is about to open the road)
-                if (due && stintLaps - plannedStop < AI_TRAFFIC_FLEX && stay < stopNext - margin) return null;
+                if (due && !neutral && stintLaps - plannedStop < AI_TRAFFIC_FLEX && stay < stopNext - margin) return null;
             }
             if (due) {
                 respreadPlan(car, remaining);
