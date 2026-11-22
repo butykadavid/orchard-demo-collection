@@ -1,12 +1,16 @@
+import { createStore } from "@orchardapp/sdk";
 import { DRIVERS, TRACKS } from "./index.js";
 import { DEFAULT_PIT_LANE, TYRE_IDS, TYRES } from "../engine/constants.js";
 
 // User customisation (sandbox mode): the grid, the circuits and the tyre compounds can be edited and are
-// kept in localStorage. DRIVERS, TRACKS and TYRES are shared module-level objects that the whole app
-// imports, so edits are applied to them in place and the defaults are snapshotted at load time.
-// Importing this module applies any saved customisation before the UI renders.
+// saved in an Orchard store (the SDK falls back to localStorage when the app runs outside Orchard).
+// DRIVERS, TRACKS and TYRES are shared module-level objects that the whole app imports, so edits are
+// applied to them in place and the defaults are snapshotted at load time.
+// Inside Orchard the saved data arrives asynchronously: `onCustomizationLoaded` tells the UI to refresh.
 
-const STORAGE_KEY = "gp-manager-customization-v1";
+const LEGACY_STORAGE_KEY = "gp-manager-customization-v1"; // where earlier versions kept the data (localStorage only)
+const store = createStore("pocketGpCustomization", { customization: null });
+const loadedListeners = new Set();
 const SECTIONS = ["drivers", "tracks", "tyres"];
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -75,12 +79,7 @@ function isValid(data) {
 }
 
 function persist() {
-    try {
-        if (isCustomized()) localStorage.setItem(STORAGE_KEY, JSON.stringify(currentCustomization()));
-        else localStorage.removeItem(STORAGE_KEY);
-    } catch {
-        // storage unavailable (private mode, quota): the customisation then only lasts for this session
-    }
+    store.set({ customization: isCustomized() ? currentCustomization() : null });
 }
 
 export function currentCustomization() {
@@ -113,9 +112,38 @@ export function resetCustomization(section) {
     persist();
 }
 
-try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-    if (isValid(saved)) apply(withPitLanes(saved));
-} catch {
-    // ignore unreadable saved data and keep the defaults
+// Called when saved data from the store replaces the live data after the UI has already rendered
+export function onCustomizationLoaded(fn) {
+    loadedListeners.add(fn);
+    return () => loadedListeners.delete(fn);
 }
+
+function readLegacy() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? "null");
+        return isValid(saved) ? saved : null;
+    } catch {
+        return null;
+    }
+}
+
+// Outside Orchard this runs synchronously on import (before the UI renders), inside it when the data arrives.
+// Data saved by earlier versions in localStorage is moved into the store once. Unreadable data keeps the defaults.
+store.subscribe((state) => {
+    let saved = state?.customization;
+    const legacy = !saved;
+    if (legacy) saved = readLegacy();
+    if (!isValid(saved)) return;
+    const data = withPitLanes(saved);
+    if (JSON.stringify(data) === JSON.stringify(currentCustomization())) return;
+    apply(clone(data));
+    if (legacy) {
+        persist();
+        try {
+            localStorage.removeItem(LEGACY_STORAGE_KEY);
+        } catch {
+            // storage unavailable
+        }
+    }
+    loadedListeners.forEach((fn) => fn());
+});

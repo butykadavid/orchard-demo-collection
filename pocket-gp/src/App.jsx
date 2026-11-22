@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DRIVERS, TRACKS } from "./data/index.js";
+import { onCustomizationLoaded } from "./data/customization.js";
 import { createRng } from "./engine/rng.js";
 import { createRace } from "./engine/race.js";
 import { runQualifying } from "./engine/qualifying.js";
@@ -19,6 +20,9 @@ export default function App() {
     const [config, setConfig] = useState(null);
     const [quali, setQuali] = useState(null);
     const [race, setRace] = useState(null);
+    const [dataVersion, setDataVersion] = useState(0); // bumped when saved customisation arrives from Orchard
+
+    useEffect(() => onCustomizationLoaded(() => setDataVersion((v) => v + 1)), []);
 
     const track = config ? TRACKS.find((t) => t.id === config.trackId) : null;
 
@@ -86,7 +90,7 @@ export default function App() {
                     ))}
                 </div>
             </nav>
-            {view === "customize" ? <Customize /> : <Setup initial={config} onRunQualifying={handleRunQualifying} />}
+            {view === "customize" ? <Customize key={dataVersion} /> : <Setup key={dataVersion} initial={config} onRunQualifying={handleRunQualifying} />}
         </>
     );
 }
