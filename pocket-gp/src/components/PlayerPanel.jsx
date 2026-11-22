@@ -38,7 +38,7 @@ function CarPanel({ race, standings, idx }) {
     const car = s.car;
     const behind = standings[idx + 1];
     const ahead = standings[idx - 1];
-    const wear = wearPerLap(car.tyre, race.lapsTotal);
+    const wear = wearPerLap(car.tyre, race.lapsTotal, car.setup.wear);
     const lapsLeft = Math.max(0, car.tyreState / wear);
     const suited = allowedTyres(race.wet);
     const onFinalLap = Math.floor(car.pos) >= race.lapsTotal - 1;

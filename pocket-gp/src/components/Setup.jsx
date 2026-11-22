@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
 import { Dices, Flag, RefreshCw } from "lucide-react";
-import { DRIVERS, TRACKS } from "../data/index.js";
+import { CARS, DRIVERS, TRACKS } from "../data/index.js";
 import { RACE_FRACTIONS, TYRE_IDS, TYRES } from "../engine/constants.js";
 import { allowedTyres, lapsTotalFor, wearPerLap } from "../engine/pace.js";
+import { buildSetup, expectedWetness, flatCar } from "../engine/setup.js";
+import { trackProfile } from "../engine/parts.js";
+import { suggestTraits, traitContext, validTraits } from "../engine/traits.js";
 import { overtakingLabel } from "../engine/format.js";
 import { createRng } from "../engine/rng.js";
 import { createWeather, forecast, rainAt, waterAt } from "../engine/weather.js";
+import CarTraits from "./CarTraits.jsx";
 import { TyreBadge } from "./Tyre.jsx";
 import { WeatherPanel } from "./WeatherPanel.jsx";
 
@@ -61,6 +65,8 @@ export default function Setup({ initial, onRunQualifying }) {
     const tyreOf = (code) => (TYRES[tyres[code]] ? tyres[code] : "m");
     const [reversed, setReversed] = useState(initial?.reversed ?? false);
     const [seed, setSeed] = useState(initial?.seed ?? Date.now());
+    // Traits the player picked (null = not touched yet: the suggested ones for the circuit and forecast are used)
+    const [picks, setPicks] = useState(() => initial?.traits ?? null);
 
     const track = TRACKS.find((t) => t.id === trackId) ?? TRACKS[0];
     const lapsTotal = lapsTotalFor(track, fraction);
@@ -79,8 +85,19 @@ export default function Setup({ initial, onRunQualifying }) {
 
     const myDrivers = DRIVERS.filter((d) => d.team === playerTeam);
 
+    // The player's car resolved for this circuit and the expected weather
+    const car = playerTeam !== null ? (CARS[playerTeam] ?? flatCar()) : null;
+    const expectedWet = useMemo(() => expectedWetness(weather, fraction, lapsTotal), [weather, fraction, lapsTotal]);
+    const traits = car ? (picks ? validTraits(car, picks) : suggestTraits(car, traitContext(trackProfile(track), lapsTotal, expectedWet))) : [];
+    const setup = car ? buildSetup({ team: playerTeam, car, track, lapsTotal, traitIds: traits, wet: expectedWet }) : null;
+    const suggest = () => setPicks(null);
+    const chooseTeam = (name) => {
+        setPlayerTeam(name);
+        setPicks(null);
+    };
+
     const run = () =>
-        onRunQualifying({ trackId: track.id, fraction, playerTeam, tyres: Object.fromEntries(myDrivers.map((d) => [d.code, tyreOf(d.code)])), reversed, seed, weather });
+        onRunQualifying({ trackId: track.id, fraction, playerTeam, traits: setup ? setup.traits : null, tyres: Object.fromEntries(myDrivers.map((d) => [d.code, tyreOf(d.code)])), reversed, seed, weather });
 
     return (
         <div className="mx-auto grid max-w-5xl gap-3 p-3 md:grid-cols-[1fr_320px] md:p-6">
@@ -158,7 +175,7 @@ export default function Setup({ initial, onRunQualifying }) {
                     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                         <button
                             type="button"
-                            onClick={() => setPlayerTeam(null)}
+                            onClick={() => chooseTeam(null)}
                             className={`rounded-md border px-2 py-1.5 text-left text-xs ${playerTeam === null ? "border-red-500 bg-red-500/10" : "border-zinc-800 hover:bg-zinc-800"
                                 }`}
                         >
@@ -169,7 +186,7 @@ export default function Setup({ initial, onRunQualifying }) {
                             <button
                                 key={t.name}
                                 type="button"
-                                onClick={() => setPlayerTeam(t.name)}
+                                onClick={() => chooseTeam(t.name)}
                                 className={`rounded-md border border-l-4 px-2 py-1.5 text-left text-xs ${playerTeam === t.name ? "border-y-red-500 border-r-red-500 bg-red-500/10" : "border-y-zinc-800 border-r-zinc-800 hover:bg-zinc-800"
                                     }`}
                                 style={{ borderLeftColor: t.color }}
@@ -181,12 +198,18 @@ export default function Setup({ initial, onRunQualifying }) {
                     </div>
                 </Card>
 
+                {setup && (
+                    <Card title={`Car and traits — ${playerTeam}`}>
+                        <CarTraits car={car} setup={setup} wet={expectedWet} lapsTotal={lapsTotal} picks={setup.traits} onChange={setPicks} onSuggest={suggest} />
+                    </Card>
+                )}
+
                 {myDrivers.map((d) => (
                     <Card key={d.code} title={`Starting tyre — ${d.name}`}>
                         <div className="grid grid-cols-[repeat(auto-fit,minmax(4.5rem,1fr))] gap-1.5">
                             {TYRE_IDS.map((id) => {
                                 const t = TYRES[id];
-                                const life = Math.round(100 / wearPerLap(id, lapsTotal));
+                                const life = Math.round(100 / wearPerLap(id, lapsTotal, setup?.wear ?? 1));
                                 return (
                                     <button
                                         key={id}

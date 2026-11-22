@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DRIVERS, TRACKS } from "./data/index.js";
+import { CARS, DRIVERS, TRACKS } from "./data/index.js";
 import { onCustomizationLoaded } from "./data/customization.js";
 import { createRng } from "./engine/rng.js";
 import { createRace } from "./engine/race.js";
@@ -30,10 +30,12 @@ export default function App() {
         const t = TRACKS.find((x) => x.id === cfg.trackId);
         const results = runQualifying({
             drivers: DRIVERS,
+            cars: CARS,
             track: t,
             weather: cfg.weather,
             fraction: cfg.fraction,
             playerTeam: cfg.playerTeam,
+            playerTraits: cfg.traits,
             playerTyres: cfg.tyres,
             reversed: cfg.reversed,
             rng: createRng(cfg.seed + 1),

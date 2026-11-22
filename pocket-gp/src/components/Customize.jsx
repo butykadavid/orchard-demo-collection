@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { currentCustomization, isCustomized, resetCustomization, saveCustomization, BUILTIN_TYRE_IDS, MAX_TYRES } from "../data/customization.js";
 import { buildTrackShape } from "../engine/trackShape.js";
+import { RATING_MAX, TRAIT_SLOTS, PART_PERF_TIERS } from "../engine/constants.js";
+import { PARTS, PART_IDS, carRating, failureOdds } from "../engine/parts.js";
 import { TyreBadge } from "./Tyre.jsx";
 
 const MIN_DRIVERS = 2;
@@ -77,7 +79,7 @@ function Hint({ children }) {
 
 const GRID_COLUMNS = "grid-cols-[4.5rem_minmax(8rem,1fr)_minmax(8rem,1fr)_2.75rem_4.25rem_4.25rem_1.75rem]";
 
-function GridEditor({ drivers, onChange }) {
+function GridEditor({ drivers, cars, onChange }) {
     const teams = [...new Set(drivers.map((d) => d.team))];
 
     const patch = (i, changes) => onChange(drivers.map((d, j) => (j === i ? { ...d, ...changes } : d)));
@@ -98,7 +100,7 @@ function GridEditor({ drivers, onChange }) {
         let n = drivers.length + 1;
         while (drivers.some((d) => d.code === `D${String(n).padStart(2, "0")}`)) n++;
         const code = `D${String(n).padStart(2, "0")}`;
-        onChange([...drivers, { code, name: "New Driver", skill: 80, team: "Independent", color: "#a1a1aa", carPerf: 60, defaultGridPos: drivers.length + 1 }]);
+        onChange([...drivers, { code, name: "New Driver", skill: 700, team: "Independent", color: "#a1a1aa", defaultGridPos: drivers.length + 1 }]);
     };
 
     const remove = (i) => onChange(drivers.filter((_, j) => j !== i));
@@ -106,8 +108,8 @@ function GridEditor({ drivers, onChange }) {
     return (
         <>
             <Hint>
-                Skill (1-100) sets driver pace and error rate. Car (0-200) is the car performance: every point is 0.01 s per lap. Changing a car colour recolours the whole
-                team. Codes are 2-4 letters or digits and must be unique.
+                Skill (0-{RATING_MAX}) sets driver pace and error rate: every point is 0.01 s per lap, and 800 is the reference. Car is the average of the team's car parts, which are
+                edited on the Cars tab. Changing a car colour recolours the whole team. Codes are 2-4 letters or digits and must be unique.
             </Hint>
             <div className="overflow-x-auto">
                 <div className="min-w-176 space-y-1">
@@ -136,8 +138,10 @@ function GridEditor({ drivers, onChange }) {
                             <input value={d.name} onChange={(e) => patch(i, { name: e.target.value })} className={`${inputClass} border-zinc-700`} aria-label="Driver name" />
                             <input value={d.team} onChange={(e) => setTeam(i, e.target.value)} list="team-names" className={`${inputClass} border-zinc-700`} aria-label="Team" />
                             <ColorInput value={d.color} onChange={(c) => setColor(i, c)} title="Team colour" />
-                            <NumInput value={d.skill} onChange={(skill) => patch(i, { skill })} min={1} max={100} />
-                            <NumInput value={d.carPerf} onChange={(carPerf) => patch(i, { carPerf })} min={0} max={200} />
+                            <NumInput value={d.skill} onChange={(skill) => patch(i, { skill })} min={0} max={RATING_MAX} integer />
+                            <span className="text-right font-mono text-sm text-zinc-400" title="Average performance of the team's car parts">
+                                {cars[d.team] ? Math.round(carRating(cars[d.team])) : "-"}
+                            </span>
                             <IconButton onClick={() => remove(i)} disabled={drivers.length <= MIN_DRIVERS} title="Remove driver">
                                 <Trash2 size={13} />
                             </IconButton>
@@ -158,6 +162,63 @@ function GridEditor({ drivers, onChange }) {
             >
                 <Plus size={13} /> Add driver
             </button>
+        </>
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cars
+// ---------------------------------------------------------------------------------------------
+
+function CarsEditor({ drivers, cars, onChange }) {
+    const teams = [];
+    for (const d of drivers) if (!teams.some((t) => t.name === d.team)) teams.push({ name: d.team, color: d.color });
+
+    const setPart = (team, id, key, value) => onChange({ ...cars, [team]: { ...cars[team], [id]: { ...cars[team][id], [key]: value } } });
+
+    return (
+        <>
+            <Hint>
+                Every team has one car of six parts, each with a performance and a reliability rating (0-{RATING_MAX}). Performance is worth 0.01 s per lap per point, weighted by what
+                the circuit asks of each part (800 is the reference), and unlocks the part's traits at {PART_PERF_TIERS.join(", ")}. Reliability sets how likely the part is to
+                break down: the risk grows quickly as it drops. A team runs up to {TRAIT_SLOTS} traits per race, one per part. Teams are created and renamed on the Grid tab.
+            </Hint>
+            <div className="space-y-2">
+                {teams.map((t) => {
+                    const car = cars[t.name];
+                    if (!car) return null;
+                    return (
+                        <div key={t.name} className="overflow-x-auto rounded-md border border-l-4 border-zinc-800 bg-zinc-900/40 p-2" style={{ borderLeftColor: t.color }}>
+                            <div className="min-w-md">
+                                <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
+                                    <span className="font-semibold">{t.name}</span>
+                                    <span className="text-[10px] text-zinc-500">
+                                        average performance <span className="font-mono text-zinc-300">{Math.round(carRating(car))}</span> · reliability{" "}
+                                        <span className="font-mono text-zinc-300">{Math.round(carRating(car, "rel"))}</span> · breakdown risk{" "}
+                                        <span className="font-mono text-zinc-300">{(failureOdds(car).total * 100).toFixed(1)}%</span> per race
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-[3rem_repeat(6,minmax(3.5rem,1fr))] items-center gap-x-2 gap-y-1">
+                                    <span />
+                                    {PART_IDS.map((id) => (
+                                        <span key={id} className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
+                                            {PARTS[id].name}
+                                        </span>
+                                    ))}
+                                    <span className="text-[10px] uppercase tracking-wider text-zinc-500">Perf</span>
+                                    {PART_IDS.map((id) => (
+                                        <NumInput key={id} value={car[id].perf} onChange={(v) => setPart(t.name, id, "perf", v)} min={0} max={RATING_MAX} integer />
+                                    ))}
+                                    <span className="text-[10px] uppercase tracking-wider text-zinc-500">Rel</span>
+                                    {PART_IDS.map((id) => (
+                                        <NumInput key={id} value={car[id].rel} onChange={(v) => setPart(t.name, id, "rel", v)} min={0} max={RATING_MAX} integer />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </>
     );
 }
@@ -311,6 +372,7 @@ function TyresEditor({ tyres, onChange }) {
 
 const TABS = [
     { id: "drivers", label: "Grid" },
+    { id: "cars", label: "Cars" },
     { id: "tracks", label: "Circuits" },
     { id: "tyres", label: "Tyres" },
 ];
@@ -321,6 +383,15 @@ export default function Customize() {
 
     // Every edit is applied and saved straight away; the store hands back the normalised data (e.g. compound order)
     const update = (changes) => {
+        // A team renamed on the Grid tab keeps its car
+        if (changes.drivers && changes.drivers.length === data.drivers.length) {
+            const cars = { ...data.cars };
+            changes.drivers.forEach((d, i) => {
+                const old = data.drivers[i];
+                if (old.team !== d.team && !cars[d.team] && !changes.drivers.some((x) => x.team === old.team)) cars[d.team] = data.cars[old.team];
+            });
+            changes = { ...changes, cars };
+        }
         if (saveCustomization({ ...data, ...changes })) setData(currentCustomization());
     };
 
@@ -390,7 +461,8 @@ export default function Customize() {
             )}
 
             <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-                {tab === "drivers" && <GridEditor drivers={data.drivers} onChange={(drivers) => update({ drivers })} />}
+                {tab === "drivers" && <GridEditor drivers={data.drivers} cars={data.cars} onChange={(drivers) => update({ drivers })} />}
+                {tab === "cars" && <CarsEditor drivers={data.drivers} cars={data.cars} onChange={(cars) => update({ cars })} />}
                 {tab === "tracks" && <TracksEditor tracks={data.tracks} onChange={(tracks) => update({ tracks })} />}
                 {tab === "tyres" && <TyresEditor tyres={data.tyres} onChange={(tyres) => update({ tyres })} />}
             </section>
