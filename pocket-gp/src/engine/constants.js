@@ -47,7 +47,6 @@ export const PUNCTURE_MAX_PER_LAP = 0.5;
 export const PUNCTURE_SPEED = 0.65; // speed factor with a punctured tyre until the car reaches the pits
 export const PUNCTURE_COST = 45; // approx. seconds lost to a puncture (slow lap + unplanned stop), used by the AI
 
-export const MECH_FAIL_PER_RACE = 0.02; // chance that a car suffers a mechanical failure during a race
 export const ERROR_PER_RACE = 0.04; // base chance of a driver error per race (scaled by skill and wetness); a quarter end in retirement
 export const RECOVER_SPEED = 0.2; // speed factor while recovering from a spin, off or contact
 export const DAMAGE_MAX = 6; // s per lap: the most lap time damage can cost
@@ -64,11 +63,12 @@ export const LAP1_OVERTAKE_MIN_RATE = 0.9; // minimum pass rate per lap (hazard)
 export const LAP1_INCIDENT_MULT = 5; // multiplier on collision and driver-error chances
 
 // ---- Race control: safety car, virtual safety car, red flag ----
-export const SC_SPEED = 0.55; // share of its free speed a car runs at behind the safety car
-export const SC_CATCHUP = 0.9; // cars that are not bunched up yet may run this share of their free speed to close the gap
-export const SC_GAP_S = 0.5; // s: gap the field closes up to behind the car in front under the safety car
+export const SC_SPEED = 0.55; // speed behind the safety car as a share of the circuit's reference racing speed (the same for every car)
+export const SC_CATCHUP = 0.9; // cars that are not bunched up yet may run this share of the reference speed (and of their own free speed) to close the gap
+export const SC_GAP_S = 0.5; // s: gap (at the slow speed) the field closes up to behind the car in front under the safety car
 export const SC_LAPS = [3, 5]; // laps (min, max) the field runs behind the safety car before it comes in
-export const VSC_SPEED = 0.6; // share of its free speed every car runs at under the virtual safety car
+export const VSC_SPEED = 0.6; // speed under the virtual safety car as a share of the reference racing speed (the same for every car)
+export const NEUTRAL_WOBBLE = 0.01; // largest relative speed variation of a car under a (virtual) safety car
 export const VSC_LAPS = [0.8, 1.8]; // length of a virtual safety car period in laps at the nominal lap time (min, max)
 export const NEUTRAL_WEAR = 0.35; // tyre wear per distance covered while the race is neutralised or stopped (relative to racing)
 export const NEUTRAL_COOLDOWN_LAPS = 2; // laps after a neutralisation ends before the next one can be called
@@ -79,6 +79,32 @@ export const RED_RAIN_WET = 85; // % track wetness from which the race can be st
 export const RED_RAIN_RATE = 0.03; // chance per lap that the race is stopped once it is that wet (once per race)
 export const RED_RAIN_RESUME_WET = 65; // % track wetness the race has to drop below before a rain stoppage ends
 export const RED_RAIN_MAX_WAIT_S = 1500; // s: a rain stoppage ends after this long whatever the weather
+
+// ---- Ratings, car parts and traits ----
+// Drivers and car parts are rated 0-1000. Every point is worth SECONDS_PER_POINT of lap time; RATING_PAR is the rating that costs no time
+// (a better rating is quicker than the reference lap, a worse one slower).
+export const RATING_MAX = 1000;
+export const RATING_PAR = 800;
+export const SECONDS_PER_POINT = 0.01;
+// The built-in grid (grid.csv) still holds the legacy numbers: skill 1-100 (0.02 s per point) and car performance (0.01 s per point).
+// They map onto the new scale so that every lap time of the default grid stays exactly what it was.
+export const LEGACY_DRIVER_BASE = 600; // driver rating = LEGACY_DRIVER_BASE + LEGACY_DRIVER_SCALE * skill
+export const LEGACY_DRIVER_SCALE = 2;
+export const LEGACY_CAR_BASE = 700; // team car rating = LEGACY_CAR_BASE + car performance
+export const DEFAULT_NEW_CAR_RATING = 760; // car of a team that is added in the editor
+export const DEFAULT_RELIABILITY = 720;
+
+export const PART_PERF_TIERS = [250, 500, 750]; // part performance at which its 1st, 2nd and 3rd trait unlock
+export const TRAIT_SLOTS = 3; // traits a team can run in a race (at most one per part)
+// How strongly a track's character shifts the weight of each part in the car's pace: a part's weight is 1 + TRACK_FIT_STRENGTH x (demand - 0.5),
+// at least MIN_PART_WEIGHT, relative to the others (0 = every part counts the same everywhere)
+export const TRACK_FIT_STRENGTH = 2.2;
+export const MIN_PART_WEIGHT = 0.3;
+// A trait's benefits scale with its part's weight at the circuit: full at TRAIT_FULL_WEIGHT, up to TRAIT_SCALE_MAX times that
+export const TRAIT_FULL_WEIGHT = 0.2;
+export const TRAIT_SCALE_MAX = 1.5;
+// Chance per race that a part breaks down: PART_FAIL_SCALE x the part's weight x ((1000 - reliability) / 1000)^2
+export const PART_FAIL_SCALE = 0.06;
 
 // ---- AI strategy ----
 export const AI_PLAN_TEMPERATURE = 4; // s: plans within a few seconds of the best are considered equally sensible

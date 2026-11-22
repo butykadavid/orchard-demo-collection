@@ -1,5 +1,7 @@
 import gridCsv from "./grid.csv?raw";
 import tracksCsv from "./tracks.csv?raw";
+import { LEGACY_DRIVER_BASE, LEGACY_DRIVER_SCALE } from "../engine/constants.js";
+import { defaultCars } from "./cars.js";
 
 function parseCsv(text) {
     return text
@@ -15,15 +17,21 @@ function driverCode(name) {
     return last.slice(0, 3).toUpperCase();
 }
 
-export const DRIVERS = parseCsv(gridCsv).map((c) => ({
+// grid.csv still holds the legacy numbers (skill 1-100, car performance): they are converted to the 0-1000 ratings here
+const GRID = parseCsv(gridCsv).map((c) => ({
     code: driverCode(c[0]),
     name: c[0],
-    skill: Number(c[1]),
+    skill: LEGACY_DRIVER_BASE + LEGACY_DRIVER_SCALE * Number(c[1]),
     team: c[2],
     color: c[3],
     carPerf: Number(c[4]),
     defaultGridPos: Number(c[5]),
 }));
+
+// Cars of the teams, keyed by team name (shared and edited in place, like DRIVERS)
+export const CARS = defaultCars(GRID);
+
+export const DRIVERS = GRID.map(({ carPerf, ...d }) => d);
 
 export const TRACKS = parseCsv(tracksCsv).map((c) => ({
     id: Number(c[0]),
@@ -31,7 +39,7 @@ export const TRACKS = parseCsv(tracksCsv).map((c) => ({
     laps: Number(c[2]),
     optLapTime: Number(c[3]),
     ovtkMultiplier: Number(c[4]),
-    // Setup optima, unused until the car-setup phase
+    // Setup optima: they define what the circuit asks of the car (see engine/parts.js)
     optDownForce: Number(c[5]),
     optCarBalance: Number(c[6]),
     optTraction: Number(c[7]),

@@ -21,7 +21,7 @@ import {
     TYRES,
     TYRE_IDS,
 } from "./constants.js";
-import { cliffPenalty, lapTimeFor, overtakeRate, punctureHazard, tyrePace, wearPerLap } from "./pace.js";
+import { cliffPenalty, lapTimeFor, overtakeRate, passFactor, punctureHazard, tyrePace, wearPerLap } from "./pace.js";
 import { fieldSpeed, weatherLapOf } from "./control.js";
 import { repairTimeFor } from "./incidents.js";
 import { pitLoss, queueWait } from "./pit.js";
@@ -50,6 +50,7 @@ function wetProfile(weather, fraction, nowLap, nowWet, count, foresight) {
 // ideal lap: tyre wear, the tyre cliff, the expected cost of punctures and the pace of the compound in the
 // conditions of that particular lap, plus the cost of every stop (pit loss and rejoining in traffic, which
 // hurts more on tracks where overtaking is hard).
+// `lapsTotal` only sets how fast tyres wear (wear scales with race length): pass the race length divided by the car's wear multiplier.
 function buildOutlook(wet, R, lapsTotal, track) {
     const stopCost = pitLoss(track) + AI_TRAFFIC_BASE + AI_TRAFFIC_PER_OVTK * track.ovtkMultiplier;
     const pace = {}; // pace[c][j] = summed compound pace of laps 0..j-1
@@ -144,7 +145,7 @@ function bestStay(o, tyre, state, damage = 0, held = null, legal = null) {
 function outlookFor(car, race, pos, laps = null) {
     const R = laps ?? Math.max(1, race.lapsTotal - Math.floor(pos) - 1);
     const wet = wetProfile(race.weather, race.fraction, weatherLapOf(race), race.wet, R, car.foresight ?? 1);
-    return buildOutlook(wet, R, race.lapsTotal, race.track);
+    return buildOutlook(wet, R, race.lapsTotal / car.setup.wear, race.track);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -153,15 +154,15 @@ function outlookFor(car, race, pos, laps = null) {
 
 const cache = new WeakMap();
 
-function startEntry(weather, fraction, track, lapsTotal) {
+function startEntry(weather, fraction, track, lapsTotal, wearMult) {
     let byKey = cache.get(weather);
     if (!byKey) cache.set(weather, (byKey = new Map()));
-    const key = `${fraction}|${lapsTotal}|${track.ovtkMultiplier}|${track.pitLane}|${track.optLapTime}`;
+    const key = `${fraction}|${lapsTotal}|${wearMult.toFixed(3)}|${track.ovtkMultiplier}|${track.pitLane}|${track.optLapTime}`;
     let entry = byKey.get(key);
     if (!entry) {
         const nowWet = predictWater(weather, fraction, 0, 0);
         const wet = wetProfile(weather, fraction, 0, nowWet, lapsTotal, 1);
-        entry = { outlook: buildOutlook(wet, lapsTotal, lapsTotal, track), plans: null };
+        entry = { outlook: buildOutlook(wet, lapsTotal, lapsTotal / wearMult, track), plans: null };
         byKey.set(key, entry);
     }
     return entry;
@@ -242,8 +243,8 @@ function sampleByCost(items, costOf, rng) {
 
 // Starting tyre (also used in qualifying): best expected race plan for that compound under the forecast, minus
 // the value of the grid positions a faster compound gains in qualifying. Near-equal options are picked at random.
-export function pickStartTyre(weather, fraction, track, rng, lapsTotal) {
-    const entry = startEntry(weather, fraction, track, lapsTotal);
+export function pickStartTyre(weather, fraction, track, rng, lapsTotal, wearMult = 1) {
+    const entry = startEntry(weather, fraction, track, lapsTotal, wearMult);
     const plans = getPlans(entry);
     const { candidates, wet } = entry.outlook;
     const slowest = Math.max(...candidates.map((c) => tyrePace(c, wet[0])));
@@ -258,8 +259,8 @@ export function pickStartTyre(weather, fraction, track, rng, lapsTotal) {
 }
 
 // Race plan for a bot that starts on `startTyre`: [{ tyre, laps }, ...]. Null when no plan fits.
-export function choosePlan(rng, startTyre, weather, fraction, track, lapsTotal) {
-    const options = getPlans(startEntry(weather, fraction, track, lapsTotal)).filter((p) => p.seq[0] === startTyre);
+export function choosePlan(rng, startTyre, weather, fraction, track, lapsTotal, wearMult = 1) {
+    const options = getPlans(startEntry(weather, fraction, track, lapsTotal, wearMult)).filter((p) => p.seq[0] === startTyre);
     if (options.length === 0) return null;
     const plan = sampleByCost(options, (p) => p.cost, rng);
     return plan.seq.map((tyre, i) => ({ tyre, laps: plan.laps[i] }));
@@ -296,7 +297,7 @@ export function planRestart(race, car, laps) {
 // it never reads the plans of other cars, human or bot, but assumes how they will behave.
 // ---------------------------------------------------------------------------------------------
 
-const freshPace = (race, car, tyre) => lapTimeFor(car.driver, race.track, tyre, 100, race.wet, 0);
+const freshPace = (race, car, tyre) => lapTimeFor(car.driver, car.setup, race.track, tyre, 100, race.wet, 0);
 
 // Cars that are racing on track (not retired, finished or in the pit lane)
 const racingRivals = (race, car) => race.cars.filter((c) => c !== car && !c.dnf && !c.finished && !c.pit && !c.parked && c.pos >= 0);
@@ -309,7 +310,7 @@ function heldLoss(car, race, o) {
     if (!ahead || ahead.dnf || ahead.finished || ahead.pit) return null;
     const L = (car.trafficLoss + car.lossAcc) / 2;
     if (L < 0.05) return null;
-    const rate = overtakeRate(ahead.pace - car.pace, race.track.ovtkMultiplier, car.chaseLaps);
+    const rate = overtakeRate(ahead.pace - car.pace, race.track.ovtkMultiplier, car.chaseLaps, passFactor(car.setup, ahead.setup));
     return { L, n: clamp(1 / Math.max(rate, 0.08), 0.5, o.R) };
 }
 
@@ -324,7 +325,7 @@ function rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) {
         if (c.pos <= rejoinPos || (c.pos - rejoinPos) * mine > AI_TRAFFIC_WINDOW_S) continue;
         const L = c.pace - mine;
         if (L <= 0) continue;
-        const rate = overtakeRate(L, race.track.ovtkMultiplier, 0);
+        const rate = overtakeRate(L, race.track.ovtkMultiplier, 0, passFactor(car.setup, c.setup));
         cost += L * clamp(1 / Math.max(rate, 0.08), 0.3, o.R);
     }
     return Math.min(cost, AI_TRAFFIC_MAX);
@@ -346,7 +347,7 @@ function positionBonus(car, race, pos, tyre, rivals, stopIn) {
     if (ahead) {
         const gap = (ahead.pos - pos) * car.pace;
         if (gap <= AI_UNDERCUT_RANGE_S) {
-            const laps = clamp((ahead.tyreState - 25) / wearPerLap(ahead.tyre, race.lapsTotal), 1, AI_UNDERCUT_HORIZON);
+            const laps = clamp((ahead.tyreState - 25) / wearPerLap(ahead.tyre, race.lapsTotal, ahead.setup.wear), 1, AI_UNDERCUT_HORIZON);
             gain = (ahead.pace - freshPace(race, car, tyre)) * laps - gap - AI_OUTLAP_LOSS > 0;
         }
     }
@@ -397,7 +398,7 @@ export function decideBotPit(car, race, pos = car.pos) {
     const current = car.plan?.[car.stintIdx];
     const next = car.plan?.[car.stintIdx + 1];
     const plannedStop = current ? current.laps + car.jitter : null;
-    const stopIn = Math.max(1, plannedStop !== null ? plannedStop - stintLaps : (car.tyreState - 25) / wearPerLap(car.tyre, race.lapsTotal));
+    const stopIn = Math.max(1, plannedStop !== null ? plannedStop - stintLaps : (car.tyreState - 25) / wearPerLap(car.tyre, race.lapsTotal, car.setup.wear));
 
     // Costs as if the track was empty: used to decide whether the plan itself is still sound
     const stay0 = bestStay(o, car.tyre, car.tyreState, car.damage, null, legal);
@@ -421,7 +422,7 @@ export function decideBotPit(car, race, pos = car.pos) {
     const stay = held ? bestStay(o, car.tyre, car.tyreState, car.damage, held, legal) : stay0;
 
     if (car.plan) {
-        const worn = !!next && car.tyreState - wearPerLap(car.tyre, race.lapsTotal) < AI_SAFETY_STATE;
+        const worn = !!next && car.tyreState - wearPerLap(car.tyre, race.lapsTotal, car.setup.wear) < AI_SAFETY_STATE;
         const due = !!next && (stintLaps >= plannedStop || worn);
         const planCost0 = due ? o.stopCost + repair + o.gc[0][next.tyre] + bias : stay0;
         if (planCost0 - Math.min(stay0, stopNow0) > AI_REPLAN_MARGIN) {

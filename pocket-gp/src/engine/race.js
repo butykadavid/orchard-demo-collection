@@ -10,10 +10,10 @@ import {
     LAP1_INCIDENT_MULT,
     LAP1_OVERTAKE_MIN_RATE,
     LAP1_OVERTAKE_MULT,
-    MECH_FAIL_PER_RACE,
     MIN_GAP_S,
     NEUTRAL_COOLDOWN_LAPS,
     NEUTRAL_WEAR,
+    NEUTRAL_WOBBLE,
     OVERTAKE_ZONES,
     OVERTAKE_ZONE_SHARE,
     OVERTAKE_ZONE_WIDTH,
@@ -47,12 +47,13 @@ import {
 import { choosePlan, decideBotPit, emergencyTyre, planRestart, tyreName } from "./ai.js";
 import { createControl, rollRaceControl, weatherLapOf } from "./control.js";
 import { addDamage, damageLabel, repairTimeFor, rollIncident } from "./incidents.js";
-import { lapNoise, lapTimeFor, lapsTotalFor, overtakeEase, overtakeRate, punctureHazard, wearPerLap } from "./pace.js";
+import { attackBonus, lapNoise, lapTimeFor, lapsTotalFor, overtakeEase, overtakeRate, passFactor, punctureHazard, tyreLoss, wearPerLap } from "./pace.js";
+import { PARTS, errorFactor } from "./parts.js";
 import { pitDriveTime, queueWait, rollStopTime } from "./pit.js";
 import { tyreRuleMet, tyreRuleReason } from "./rules.js";
+import { getTrait } from "./traits.js";
 import { waterAt, rainAt } from "./weather.js";
 
-const MECH_REASONS = ["engine failure", "gearbox failure", "hydraulics failure", "overheating", "brake failure", "electrical problem"];
 const ERROR_REASONS = ["spins and hits the barrier", "goes off and is stuck in the gravel", "crashes out"];
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -66,6 +67,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
 
     const cars = grid.map((g) => ({
         driver: g.driver,
+        setup: g.setup, // the team's car at this circuit: parts and traits resolved into numbers (see setup.js)
         code: g.driver.code,
         name: g.driver.name,
         team: g.driver.team,
@@ -77,6 +79,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         speed: 0,
         pace: track.optLapTime,
         noise: lapNoise(rng),
+        crawlWobble: 0, // relative speed variation under a (virtual) safety car, so the field does not move like one block
         tyre: g.tyre,
         tyreState: 100,
         allTyres: g.tyre,
@@ -109,8 +112,8 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         aggression: rng.range(AI_AGGRESSION[0], AI_AGGRESSION[1]), // how readily a bot takes tactical strategy risks
         battle: false, // in a pass in progress, either as the passer or the car being passed
         // Retirement chances per lap of race distance (independent of race length)
-        mechRate: MECH_FAIL_PER_RACE / lapsTotal,
-        errorRate: (ERROR_PER_RACE * (1 + (100 - g.driver.skill) / 25)) / lapsTotal,
+        mechRate: g.setup.failRate / lapsTotal,
+        errorRate: (ERROR_PER_RACE * errorFactor(g.driver.skill) * (1 + g.setup.errors)) / lapsTotal,
         following: false,
         lapsDone: 0,
         lapStart: 0,
@@ -122,6 +125,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         lapNeutral: false, // part of the lap in progress was run under a safety car, virtual safety car or red flag
         overtakes: 0, // passes made on track
         overtaken: 0, // times passed on track
+        traitTally: {}, // per trait id: what it did in this race (seconds, expected passes and incidents), see the trait bookkeeping below
         finished: false,
         finishTime: null,
         sectorTimes: new Float64Array(lapsTotal * SECTORS + 2).fill(-1),
@@ -129,7 +133,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
     cars.forEach((c) => (c.prevPos = c.pos));
 
     cars.forEach((c) => {
-        if (!c.isPlayer) c.plan = choosePlan(rng, c.tyre, weather, fraction, track, lapsTotal);
+        if (!c.isPlayer) c.plan = choosePlan(rng, c.tyre, weather, fraction, track, lapsTotal, c.setup.wear);
     });
 
     return {
@@ -146,6 +150,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         finished: false,
         events: [],
         eventSeq: 0,
+        traitLog: [], // moments in which a trait visibly changed the race: { t, lap, code, good, text }
         fastest: null,
         playerTeam,
         teamBusyUntil: new Map(), // team -> race clock until which its pit crew is busy (one car is serviced at a time)
@@ -160,6 +165,73 @@ function pushEvent(race, kind, text) {
     const lap = Math.min(race.lapsTotal, Math.max(0, Math.floor(leader.pos)) + 1);
     race.events.push({ id: race.eventSeq++, t: race.clock, lap, kind, text });
     if (race.events.length > 60) race.events.shift();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Trait bookkeeping (read by the post-race trait analysis, never by the simulation itself)
+//   pace/wet  seconds the trait made the car quicker (or slower) over the race: shown as an overall pace difference only
+//   passes    expected extra passes made (a trait that hurts passing counts negative)
+//   defended  expected passes kept off the car (negative: extra passes conceded)
+//   errors, fails  expected extra driver errors and part failures the trait caused
+// Expected counts come from comparing the pass or incident odds with and without the trait at every step, so they use no random numbers.
+// Every whole unit a count reaches becomes a moment in race.traitLog; incidents the trait contributed to are logged as they happen.
+// ---------------------------------------------------------------------------------------------
+
+const traitName = (id) => getTrait(id)?.name ?? id;
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const share = (v) => `${Math.round(v * 100)}%`;
+
+function tallyOf(car, id) {
+    return (car.traitTally[id] ??= { pace: 0, passes: 0, defended: 0, errors: 0, fails: 0, logged: {} });
+}
+
+function traitMoment(race, car, good, text) {
+    const lap = Math.min(race.lapsTotal, Math.max(0, Math.floor(car.pos)) + 1);
+    race.traitLog.push({ t: race.clock, lap, code: car.code, good, text });
+}
+
+const TRAIT_WORDS = {
+    passes: (name, good, n) => (good ? `${name}: about ${plural(n, "extra pass", "extra passes")} won so far` : `${name}: about ${plural(n, "pass", "passes")} lost so far`),
+    defended: (name, good, n) => (good ? `${name}: about ${plural(n, "car", "cars")} held behind so far` : `${name}: about ${plural(n, "extra pass", "extra passes")} conceded so far`),
+};
+
+// Adds `delta` (expected events in the car's favour, negative against it) to a running count and logs every new whole unit
+function credit(race, car, id, key, delta) {
+    const t = tallyOf(car, id);
+    t[key] += delta;
+    const whole = Math.trunc(t[key]);
+    const was = t.logged[key] ?? 0;
+    if (whole === was) return;
+    t.logged[key] = whole;
+    if (Math.abs(whole) > Math.abs(was)) traitMoment(race, car, whole > 0, TRAIT_WORDS[key](traitName(id), whole > 0, Math.abs(whole)));
+}
+
+// One step of a pass attempt: what each trait of the two cars changed in the chance of a pass compared with a car without it
+function creditPass(race, car, ahead, rate, exposure, chaotic, zone) {
+    const p = (r) => 1 - Math.exp(-r * exposure);
+    const base = p(rate);
+    for (const t of car.setup.traitFx) {
+        const c = attackBonus(t.fx, chaotic, zone);
+        if (c) credit(race, car, t.id, "passes", p(rate * Math.max(0, 1 + c)) - base);
+    }
+    for (const t of ahead.setup.traitFx) {
+        if (t.fx.defend) credit(race, ahead, t.id, "defended", base - p(rate * Math.max(0, 1 - t.fx.defend)));
+    }
+}
+
+// Seconds gained or lost over this step by traits that change the pace, and the extra incident odds of the traits that make the car error- or failure-prone
+function creditStep(car, speed, dt, advance, wet, errorP, green) {
+    const fragile = 1 + Math.max(-0.5, car.setup.effects.fragile);
+    for (const t of car.setup.traitFx) {
+        const own = tallyOf(car, t.id);
+        if (green) {
+            // seconds per lap this trait is worth right now: its conditions (rain, clean air, worn tyres) decide
+            const gain = (t.fx.wet * wet) / 100 + (car.following ? 0 : t.fx.clean) + t.fx.grip * tyreLoss(car.tyreState);
+            if (gain) own.pace += gain * speed * dt;
+        }
+        if (t.fx.errors) own.errors += (errorP * t.fx.errors) / (1 + car.setup.errors);
+        if (t.fx.fragile) own.fails += (car.mechRate * advance * t.fx.fragile) / fragile;
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,9 +391,14 @@ function incident(race, car, kind, reason, retireText) {
         return true;
     }
     car.recover += o.loss / (1 - RECOVER_SPEED);
-    car.damage = addDamage(car.damage, o.damage);
-    const dmg = damageLabel(o.damage);
+    car.damage = addDamage(car.damage, o.damage * (1 - car.setup.tough));
+    const dmg = damageLabel(o.damage * (1 - car.setup.tough));
     pushEvent(race, "incident", `${car.code} ${o.verb}, loses ${Math.round(o.loss)} s${dmg ? `, ${dmg}` : ""}`);
+    for (const t of car.setup.traitFx) {
+        if (t.fx.tough > 0 && o.damage * t.fx.tough >= 0.1) {
+            traitMoment(race, car, true, `${traitName(t.id)}: ${car.code} ${o.verb}, and ${share(Math.min(0.9, t.fx.tough))} less damage means ${(o.damage * t.fx.tough).toFixed(1)} s/lap kept`);
+        }
+    }
     return false;
 }
 
@@ -581,7 +658,8 @@ export function stepRace(race, dt) {
     const { mode, phase } = race.control;
     const neutral = mode !== "green";
     const slowCar = mode === "sc" || (mode === "red" && phase === "stopping"); // field bunches up behind a (virtual) leader
-    const minGapS = slowCar ? SC_GAP_S : MIN_GAP_S;
+    // Behind the (virtual) safety car every car drives the same speed (laps per second), set by the circuit and not by the car
+    const crawl = (mode === "vsc" ? VSC_SPEED : SC_SPEED) / track.optLapTime;
 
     const order = rank(race.cars, mode === "red");
     race.order = order;
@@ -643,16 +721,25 @@ export function stepRace(race, dt) {
         while (ahead && (car.pass?.target === ahead || ahead.pass?.target === car)) ahead = ahead.aheadCar;
         car.aheadCar = ahead;
 
-        car.pace = lapTimeFor(car.driver, track, car.tyre, car.tyreState, wet, car.noise) / (car.punctured ? PUNCTURE_SPEED : 1) + car.damage;
+        car.pace = lapTimeFor(car.driver, car.setup, track, car.tyre, car.tyreState, wet, car.noise) / (car.punctured ? PUNCTURE_SPEED : 1) + car.damage;
+        // Clean-air traits only pay while nobody is close ahead (as of the previous step)
+        if (!car.following && !car.pit) car.pace -= car.setup.clean;
         const free = 1 / car.pace;
         // Fighting for the position through a corner: neither car has the ideal line, so both lose time for as long as it lasts
         const lineLoss = car.battle && !car.pit && oldPos >= 0 && !inOvertakeZone(oldPos) ? 1 - PASS_CORNER_LOSS : 1;
         let speed = free * lineLoss;
         let following = false;
+        // closest a car gets to the one ahead (laps): a fixed time gap at crawl speed behind the safety car, at the car's own pace otherwise
+        const minGapLaps = slowCar ? SC_GAP_S * crawl : MIN_GAP_S / car.pace;
 
-        // Neutralised race: everybody drives slowly, the field closes up behind the safety car
-        if (mode === "vsc") speed = free * VSC_SPEED;
-        else if (slowCar) speed = free * (ahead && (ahead.prevPos - oldPos) * car.pace > FOLLOW_GAP_S ? SC_CATCHUP : SC_SPEED);
+        // Neutralised race: everybody drives the same slow speed (give or take a little), the field closes up behind the safety car
+        const bunched = () => !ahead || (ahead.prevPos - oldPos) / crawl <= SC_GAP_S + 0.05; // gap in seconds at crawl speed
+        if (mode === "vsc" || slowCar) {
+            car.crawlWobble = Math.max(-NEUTRAL_WOBBLE, Math.min(NEUTRAL_WOBBLE, car.crawlWobble * 0.98 + rng.range(-0.2, 0.2) * NEUTRAL_WOBBLE));
+            const base = crawl * (1 + car.crawlWobble);
+            if (mode === "vsc") speed = Math.min(free, base);
+            else speed = bunched() ? Math.min(free, base) : Math.min(free * SC_CATCHUP, (base * SC_CATCHUP) / SC_SPEED);
+        }
 
         // While passing, the car drives its own pace as if the other car was not there (at least slightly quicker, so the pass completes)
         if (car.pass) speed = Math.max(speed, car.pass.target.speed * (1 + PASS_CLOSING_SPEED));
@@ -663,9 +750,9 @@ export function stepRace(race, dt) {
             speed = p.elapsed >= p.arrive && p.elapsed < p.end ? 0 : p.laneSpeed;
         } else if (ahead) {
             const gapLaps = ahead.prevPos - oldPos;
-            if (gapLaps * car.pace < FOLLOW_GAP_S) {
+            // time gaps: at crawl speed behind the safety car, at the car's own pace otherwise
+            if (slowCar ? gapLaps / crawl < FOLLOW_GAP_S : gapLaps * car.pace < FOLLOW_GAP_S) {
                 following = true;
-                const minGapLaps = minGapS / car.pace;
                 const cap = ahead.speed + Math.max(0, gapLaps - minGapLaps) * CLOSE_RATE;
                 if (cap < speed) speed = cap;
             }
@@ -686,30 +773,42 @@ export function stepRace(race, dt) {
         // Random incidents: puncture on worn tyres, mechanical failure, driver error
         if (oldPos >= 0 && !car.pit) {
             const advance = speed * dt; // laps covered this step
+            const errorP = neutral ? 0 : car.errorRate * (1 + wet / 100) * (chaos(car) ? LAP1_INCIDENT_MULT : 1) * advance;
+            if (car.setup.traitFx.length) creditStep(car, speed, dt, advance, wet, errorP, !neutral);
             const hazard = punctureHazard(car.tyreState);
             if (!car.punctured && hazard > 0 && rng.next() < hazard * advance) {
                 car.punctured = true;
                 pushEvent(race, "puncture", `${car.code} has a puncture`);
             }
             if (rng.next() < car.mechRate * advance) {
+                // The failing part: drawn from the car's failure odds, so unreliable parts are the ones that break
+                let pick = rng.next() * car.setup.failRate;
+                const failed = car.setup.failParts.find((f) => (pick -= f.p) < 0) ?? car.setup.failParts[0];
+                const failures = PARTS[failed.part].failures;
                 retire(race, car, "mechanical");
-                pushEvent(race, "dnf", `${car.code} retires: ${MECH_REASONS[rng.int(0, MECH_REASONS.length)]}`);
+                car.dnf.part = failed.part;
+                for (const t of car.setup.traitFx) {
+                    if (t.fx.fragile > 0) traitMoment(race, car, false, `${traitName(t.id)}: ${car.code}'s part failures were ${share(t.fx.fragile)} more likely, and the ${PARTS[failed.part].name.toLowerCase()} gave up`);
+                }
+                pushEvent(race, "dnf", `${car.code} retires: ${failures[rng.int(0, failures.length)]}`);
                 callRaceControl(race, "mechanical");
                 continue;
             }
-            if (!neutral && rng.next() < car.errorRate * (1 + wet / 100) * (chaos(car) ? LAP1_INCIDENT_MULT : 1) * advance) {
+            if (!neutral && rng.next() < errorP) {
+                for (const t of car.setup.traitFx) {
+                    if (t.fx.errors > 0) traitMoment(race, car, false, `${traitName(t.id)}: ${car.code} makes a mistake, and driver errors were ${share(t.fx.errors)} more likely`);
+                }
                 const retired = incident(race, car, "error", "driver error", `${car.code} ${ERROR_REASONS[rng.int(0, ERROR_REASONS.length)]}`);
                 callRaceControl(race, retired ? "crash" : "spin");
                 if (car.dnf) continue;
             }
         }
 
-        if (!car.pit) car.tyreState -= wearPerLap(car.tyre, lapsTotal) * speed * dt * (neutral ? NEUTRAL_WEAR : 1);
+        if (!car.pit) car.tyreState -= wearPerLap(car.tyre, lapsTotal, car.setup.wear) * speed * dt * (neutral ? NEUTRAL_WEAR : 1);
 
         let newPos = oldPos + speed * dt;
 
         if (following) {
-            const minGapLaps = minGapS / car.pace;
             newPos = Math.max(oldPos, Math.min(newPos, ahead.pos - minGapLaps * 0.5));
         }
 
@@ -739,7 +838,12 @@ export function stepRace(race, dt) {
             if (lap1) rate = Math.max(rate * LAP1_OVERTAKE_MULT, LAP1_OVERTAKE_MIN_RATE * overtakeEase(track.ovtkMultiplier));
             if (!collided && rate > 0 && oldPos >= 0) {
                 const zones = lap1 ? [START_CORNER, ...OVERTAKE_ZONES] : OVERTAKE_ZONES;
-                const exposure = travelled * zoneDensity(oldPos + travelled / 2, zones);
+                const density = zoneDensity(oldPos + travelled / 2, zones);
+                const exposure = travelled * density;
+                // the traits that help or hurt passing only on the straights (density above 1) or only in the corners
+                const zone = density > 1;
+                if (car.setup.traitFx.length || ahead.setup.traitFx.length) creditPass(race, car, ahead, rate, exposure, lap1, zone);
+                rate *= passFactor(car.setup, ahead.setup, lap1, zone);
                 if (close && rng.next() < CRASH_PER_ATTEMPT * ATTEMPTS_PER_LAP * wetFactor * exposure) {
                     crash(race, order, car, ahead);
                     collided = true;

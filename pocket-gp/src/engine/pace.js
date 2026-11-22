@@ -1,4 +1,4 @@
-import { CLIFF_STATE, CLIFF_SECONDS_PER_PCT, OVTK_EASY_LEVEL, OVTK_HARDNESS_EXP, PUNCTURE_MAX_PER_LAP, PUNCTURE_PER_LAP, TYRE_IDS, TYRES } from "./constants.js";
+import { CLIFF_STATE, CLIFF_SECONDS_PER_PCT, OVERTAKE_ZONE_SHARE, OVTK_EASY_LEVEL, OVTK_HARDNESS_EXP, PUNCTURE_MAX_PER_LAP, PUNCTURE_PER_LAP, RATING_PAR, SECONDS_PER_POINT, TYRE_IDS, TYRES } from "./constants.js";
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -6,6 +6,9 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export function cliffPenalty(tyreState) {
     return Math.max(0, CLIFF_STATE - clamp(tyreState, -100, 100)) * CLIFF_SECONDS_PER_PCT;
 }
+
+// Seconds per lap a tyre at this state has lost: the gradual wear plus the extra past the cliff
+export const tyreLoss = (tyreState) => (100 - clamp(tyreState, -100, 100)) / 25 + cliffPenalty(tyreState);
 
 // Chance of a puncture per lap at the given tyre state (zero above the cliff, rising as it wears out).
 export function punctureHazard(tyreState) {
@@ -21,16 +24,18 @@ export function tyrePace(tyreId, wet) {
     return 9 + Math.abs(75 - wet) * 0.1;
 }
 
-// Legacy lap time formula. The random `noise` term is what the original intended
-// (ember / 1000) but accidentally lost to integer division.
-export function lapTimeFor(driver, track, tyreId, tyreState, wet, noise = 0) {
+// Lap time: the circuit's reference lap plus what the driver rating, the car at this circuit (setup.carLoss, traits included)
+// and the conditions cost. Ratings are 0-1000 and every point is SECONDS_PER_POINT; RATING_PAR costs nothing.
+// The random `noise` term is what the original intended (ember / 1000) but accidentally lost to integer division.
+export function lapTimeFor(driver, setup, track, tyreId, tyreState, wet, noise = 0, qualifying = false) {
     return (
         track.optLapTime +
-        (100 - driver.skill) / 50 +
-        (100 - driver.carPerf) / 100 +
+        (RATING_PAR - driver.skill) * SECONDS_PER_POINT +
+        setup.carLoss -
+        (setup.wetGain * wet) / 100 -
+        (qualifying ? setup.quali : 0) +
         noise +
-        (100 - clamp(tyreState, -100, 100)) / 25 +
-        cliffPenalty(tyreState) +
+        tyreLoss(tyreState) * (1 - setup.grip) +
         tyrePace(tyreId, wet)
     );
 }
@@ -48,18 +53,32 @@ export function overtakeEase(multiplier) {
 // It grows with the pace advantage relative to what the track demands, so a car that is far quicker than
 // the one ahead gets by almost immediately, while an equal car rarely does. Staying close for a long time
 // wears the defender down a little.
-export function overtakeRate(delta, multiplier, chaseLaps = 0) {
+// `factor` scales the rate (see passFactor)
+export function overtakeRate(delta, multiplier, chaseLaps = 0, factor = 1) {
     const needed = 0.15 + 0.12 * multiplier; // pace advantage (s per lap) that makes a pass about as likely as not
     const r = delta / needed;
     const rate = 0.083 + 0.7 * r + (r > 0 ? 0.5 * r * r : 0);
     if (rate <= 0) return 0;
     // Beyond an easy-to-normal track, passing gets exponentially harder (Monaco is far harder than Imola)
-    return (rate + 0.25 * Math.min(chaseLaps, 2)) * overtakeEase(multiplier);
+    return (rate + 0.25 * Math.min(chaseLaps, 2)) * overtakeEase(multiplier) * factor;
 }
 
-// Tyre wear in % per lap. Scales with race length so a shortened race wears tyres faster per lap.
-export function wearPerLap(tyreId, lapsTotal) {
-    return (TYRES[tyreId].wear * 72) / lapsTotal;
+// How the traits of the two cars change a pass: the attacker's attack (and launch on a chaotic lap) against the defender's defend.
+// `zone` says where it happens: true on the straights and in the braking zones, false in the corners, null when it does not matter
+// (the attacker's zone-specific bonuses are then blended by how many passes happen where).
+export function passFactor(attacker, defender, chaotic = false, zone = null) {
+    const where = zone === null ? OVERTAKE_ZONE_SHARE * attacker.attackZone + (1 - OVERTAKE_ZONE_SHARE) * attacker.attackCorner : zone ? attacker.attackZone : attacker.attackCorner;
+    return Math.max(0, 1 + attacker.attack + where + (chaotic ? attacker.launch : 0)) * (1 - defender.defend);
+}
+
+// What one trait's effects (see traitBreakdown) add to the attacker's pass rate where and when it happens: the attacker side of passFactor
+export function attackBonus(fx, chaotic, zone) {
+    return fx.attack + (zone ? fx.attackZone : fx.attackCorner) + (chaotic ? fx.launch : 0);
+}
+
+// Tyre wear in % per lap. Scales with race length so a shortened race wears tyres faster per lap; `mult` is the car's wear multiplier.
+export function wearPerLap(tyreId, lapsTotal, mult = 1) {
+    return ((TYRES[tyreId].wear * 72) / lapsTotal) * mult;
 }
 
 export function lapsTotalFor(track, fraction) {
