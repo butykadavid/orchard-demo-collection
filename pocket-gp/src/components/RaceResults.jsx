@@ -38,7 +38,11 @@ export default function RaceResults({ standings, fastest, playerTeam, onBack }) 
                                     <span className="text-zinc-400">{s.car.name}</span>
                                 </td>
                                 <td className="py-0.5 text-right font-mono">
-                                    {s.car.dnf ? (
+                                    {s.car.dsq ? (
+                                        <span className="text-red-400" title={s.car.dsq.reason}>
+                                            DSQ · {s.car.dsq.reason}
+                                        </span>
+                                    ) : s.car.dnf ? (
                                         <span className="text-red-400" title={s.car.dnf.reason}>
                                             DNF L{s.car.dnf.lap} · {s.car.dnf.reason}
                                         </span>

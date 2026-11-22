@@ -32,6 +32,7 @@ import { choosePlan, decideBotPit, emergencyTyre, tyreName } from "./ai.js";
 import { addDamage, damageLabel, repairTimeFor, rollIncident } from "./incidents.js";
 import { lapNoise, lapTimeFor, lapsTotalFor, overtakeEase, overtakeRate, punctureHazard, wearPerLap } from "./pace.js";
 import { pitDriveTime, queueWait, rollStopTime } from "./pit.js";
+import { tyreRuleMet, tyreRuleReason } from "./rules.js";
 import { waterAt, rainAt } from "./weather.js";
 
 const MECH_REASONS = ["engine failure", "gearbox failure", "hydraulics failure", "overheating", "brake failure", "electrical problem"];
@@ -70,6 +71,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         damage: 0, // lap time penalty (s per lap) until repaired in the pits
         recover: 0, // seconds still to spend crawling after a spin or contact
         dnf: null,
+        dsq: null, // disqualified at the flag for breaking the tyre rule: { reason }
         plan: null, // bot race strategy: [{ tyre, laps }]
         stintIdx: 0,
         stintStart: 0, // lap index at which the current stint began
@@ -144,15 +146,15 @@ export function requestPit(race, code, tyreId) {
 // Ranking, gaps, standings
 // ---------------------------------------------------------------------------------------------
 
-// Classified finishers first, then running cars, then retirements (furthest distance first).
-const group = (c) => (c.finished ? 0 : c.dnf ? 2 : 1);
+// Classified finishers first, then running cars, then retirements (furthest distance first), disqualified cars last.
+const group = (c) => (c.dsq ? 3 : c.finished ? 0 : c.dnf ? 2 : 1);
 
 function rank(cars) {
     return cars.slice().sort((a, b) => {
         const ga = group(a);
         const gb = group(b);
         if (ga !== gb) return ga - gb;
-        if (ga === 0) return a.finishTime - b.finishTime;
+        if (ga === 0 || ga === 3) return a.finishTime - b.finishTime;
         if (ga === 2) return b.pos - a.pos || b.dnf.time - a.dnf.time;
         return b.pos - a.pos;
     });
@@ -511,7 +513,12 @@ export function stepRace(race, dt) {
             car.pos = lapsTotal;
             car.speed = 0;
             car.pit = null;
-            if (!order.some((c) => c !== car && c.finished)) pushEvent(race, "finish", `${car.code} takes the chequered flag`);
+            if (!tyreRuleMet(car.allTyres)) {
+                car.dsq = { reason: tyreRuleReason };
+                pushEvent(race, "dnf", `${car.code} is disqualified: ${tyreRuleReason}`);
+            } else if (!order.some((c) => c !== car && c.finished && !c.dsq)) {
+                pushEvent(race, "finish", `${car.code} takes the chequered flag`);
+            }
         }
 
         if (!car.pit && !car.finished) blocker = car;

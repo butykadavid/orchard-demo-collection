@@ -11,17 +11,19 @@ export default function MobileCarStrip({ standings, onOpen }) {
             {mine.map((s) => {
                 const { car } = s;
                 const alert = !car.dnf && (car.punctured || car.tyreState < 20);
-                const status = car.dnf
-                    ? "Retired"
-                    : car.finished
-                        ? "Finished"
-                        : car.pit
-                            ? "In pit lane"
-                            : car.pitRequest !== null
-                                ? "BOX this lap"
-                                : s.position > 1
-                                    ? fmtGap(s.gapAhead, s.lapsBehindAhead)
-                                    : "Leader";
+                const status = car.dsq
+                    ? "Disqualified"
+                    : car.dnf
+                        ? "Retired"
+                        : car.finished
+                            ? "Finished"
+                            : car.pit
+                                ? "In pit lane"
+                                : car.pitRequest !== null
+                                    ? "BOX this lap"
+                                    : s.position > 1
+                                        ? fmtGap(s.gapAhead, s.lapsBehindAhead)
+                                        : "Leader";
                 return (
                     <button
                         key={car.code}
@@ -38,7 +40,7 @@ export default function MobileCarStrip({ standings, onOpen }) {
                         <div className="min-w-0 flex-1">
                             <div className="flex items-baseline justify-between text-xs">
                                 <span className="font-semibold">{car.code}</span>
-                                <span className="font-mono text-zinc-300">{car.dnf ? "OUT" : `P${s.position}`}</span>
+                                <span className="font-mono text-zinc-300">{car.dsq ? "DSQ" : car.dnf ? "OUT" : `P${s.position}`}</span>
                             </div>
                             <div className="truncate font-mono text-[10px] text-zinc-400">{status}</div>
                         </div>

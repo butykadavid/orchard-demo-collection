@@ -15,15 +15,16 @@ export default function TimingTower({ standings, fastestCode }) {
             <ul>
                 {standings.map((s) => {
                     const { car } = s;
-                    const out = Boolean(car.dnf);
-                    const interval = out ? "DNF" : s.position === 1 ? "LEADER" : fmtGap(s.gapAhead, s.lapsBehindAhead);
+                    const dsq = Boolean(car.dsq);
+                    const out = Boolean(car.dnf) || dsq;
+                    const interval = dsq ? "DSQ" : out ? "DNF" : s.position === 1 ? "LEADER" : fmtGap(s.gapAhead, s.lapsBehindAhead);
                     const gap = out || s.position === 1 ? "" : fmtGap(s.gapLeader, s.lapsBehindLeader);
                     return (
                         <li
                             key={car.code}
                             className={`grid grid-cols-[1.25rem_0.25rem_2.5rem_1fr_3.5rem_3rem] items-center gap-x-2 px-2 py-0.75 text-xs ${car.isPlayer ? "bg-red-500/15" : "odd:bg-zinc-900/40"
                                 } ${out ? "opacity-50" : ""}`}
-                            title={out ? `Retired lap ${car.dnf.lap}: ${car.dnf.reason}` : undefined}
+                            title={dsq ? `Disqualified: ${car.dsq.reason}` : out ? `Retired lap ${car.dnf.lap}: ${car.dnf.reason}` : undefined}
                         >
                             <span className="font-mono text-zinc-400">{s.position}</span>
                             <span className="h-4 w-1 rounded-sm" style={{ backgroundColor: car.color }} />
@@ -37,7 +38,7 @@ export default function TimingTower({ standings, fastestCode }) {
                                 <WearBar value={car.tyreState} className="w-full" />
                             </span>
                             <span className="text-right font-mono text-zinc-400">
-                                {car.finished ? "FIN" : out ? "OUT" : car.pit ? <span className="text-amber-400">PIT</span> : car.punctured ? <span className="text-red-400">PNC</span> : (
+                                {dsq ? "DSQ" : car.finished ? "FIN" : out ? "OUT" : car.pit ? <span className="text-amber-400">PIT</span> : car.punctured ? <span className="text-red-400">PNC</span> : (
                                     <>
                                         {car.damage > 0.05 && (
                                             <span className="mr-1 text-orange-400" title={`Damage: +${car.damage.toFixed(1)} s/lap`}>

@@ -24,6 +24,7 @@ import {
 import { cliffPenalty, lapTimeFor, overtakeRate, punctureHazard, tyrePace, wearPerLap } from "./pace.js";
 import { repairTimeFor } from "./incidents.js";
 import { pitLoss, queueWait } from "./pit.js";
+import { legalTyres, tyreRuleMet } from "./rules.js";
 import { predictWater } from "./weather.js";
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -101,10 +102,19 @@ function buildOutlook(wet, R, lapsTotal, track) {
     return { R, wet, lapsTotal, stopCost, stint, g, gc, candidates, pace };
 }
 
+// Cheapest way to cover laps j.. starting on a fresh set; `legal` (compounds that satisfy the tyre rule) limits the first compound
+function cheapest(o, j, legal) {
+    if (!legal) return o.g[j];
+    let best = { cost: Infinity, tyre: legal[0] };
+    for (const c of legal) if (o.gc[j][c] < best.cost) best = { cost: o.gc[j][c], tyre: c };
+    return best;
+}
+
 // Cheapest way to keep running the current tyre for at least one more lap and stop later (or never).
 // Damage adds its lap time penalty to every lap that is stayed out; a later stop pays the repair time as well.
 // `held` ({ L, n }: seconds lost per lap and expected laps still stuck) adds the time lost behind a slower car.
-function bestStay(o, tyre, state, damage = 0, held = null) {
+// `legal` is set while the tyre rule is not met yet: the car then has to stop later, onto one of those compounds.
+function bestStay(o, tyre, state, damage = 0, held = null, legal = null) {
     const wear = wearPerLap(tyre, o.lapsTotal);
     const repair = repairTimeFor(damage);
     let best = Infinity;
@@ -113,7 +123,7 @@ function bestStay(o, tyre, state, damage = 0, held = null) {
         const s = Math.max(state - (k - 0.5) * wear, -100);
         sum += (100 - s) / 25 + cliffPenalty(s) + punctureHazard(s) * PUNCTURE_COST + tyrePace(tyre, o.wet[k - 1]) + damage;
         if (held) sum += held.L * clamp(held.n - (k - 1), 0, 1);
-        const cost = k < o.R ? sum + o.stopCost + repair + o.g[k].cost : sum;
+        const cost = k < o.R ? sum + o.stopCost + repair + cheapest(o, k, legal).cost : legal ? Infinity : sum;
         if (cost < best) best = cost;
     }
     return best;
@@ -150,8 +160,8 @@ function getPlans(entry) {
     if (entry.plans) return entry.plans;
     const { outlook: o } = entry;
     const m = o.R;
-    const minLen = Math.max(3, Math.ceil(m * AI_MIN_STINT_FRACTION));
-    const maxStints = Math.max(1, Math.min(AI_MAX_STINTS, Math.floor(m / minLen)));
+    const minLen = Math.max(1, Math.min(Math.max(3, Math.ceil(m * AI_MIN_STINT_FRACTION)), Math.floor(m / 2)));
+    const maxStints = Math.max(2, Math.min(AI_MAX_STINTS, Math.floor(m / minLen))); // the tyre rule needs at least two stints
 
     const optimise = (seq) => {
         let prev = new Float64Array(m + 1).fill(Infinity);
@@ -185,7 +195,7 @@ function getPlans(entry) {
     const plans = [];
     const seq = [];
     const extend = () => {
-        if (seq.length > 0) {
+        if (seq.length > 0 && tyreRuleMet(seq.join(""))) {
             const plan = optimise(seq);
             if (plan) plans.push(plan);
         }
@@ -232,6 +242,7 @@ export function pickStartTyre(weather, fraction, track, rng, lapsTotal) {
             return { tyre, cost: Math.min(...costs) - AI_GRID_VALUE * (slowest - tyrePace(tyre, wet[0])) };
         })
         .filter((o) => Number.isFinite(o.cost));
+    if (options.length === 0) return candidates[0] ?? "m";
     return sampleByCost(options, (o) => o.cost, rng).tyre;
 }
 
@@ -243,9 +254,11 @@ export function choosePlan(rng, startTyre, weather, fraction, track, lapsTotal) 
     return plan.seq.map((tyre, i) => ({ tyre, laps: plan.laps[i] }));
 }
 
-// Tyre for an unplanned stop (puncture) - cheapest way to cover the remaining laps in the expected weather.
+// Tyre for an unplanned stop (puncture) - cheapest way to cover the remaining laps in the expected weather,
+// on a compound that satisfies the tyre rule if it is not met yet.
 export function emergencyTyre(race, car) {
-    return outlookFor(car, race, car.pos).g[0].tyre;
+    const legal = tyreRuleMet(car.allTyres) ? null : legalTyres(car.allTyres);
+    return cheapest(outlookFor(car, race, car.pos), 0, legal).tyre;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -336,9 +349,13 @@ export function decideBotPit(car, race, pos = car.pos) {
     if (remaining < 1) return null;
 
     const o = outlookFor(car, race, pos);
-    if (car.punctured) {
+    // Tyre rule: until two different compounds have been fitted, the next stop has to bring a different one, and a stop is
+    // mandatory. The last pit entry before the final lap is the last chance, so the bot takes it whatever it costs.
+    const legal = tyreRuleMet(car.allTyres) ? null : legalTyres(car.allTyres);
+    const first = cheapest(o, 0, legal);
+    if (car.punctured || (legal && remaining <= 1)) {
         car.plan = null;
-        return o.g[0].tyre;
+        return first.tyre;
     }
 
     const bias = (car.pitThreshold - 38) * 0.15; // some teams stop a little earlier or later than others
@@ -350,8 +367,8 @@ export function decideBotPit(car, race, pos = car.pos) {
     const stopIn = Math.max(1, plannedStop !== null ? plannedStop - stintLaps : (car.tyreState - 25) / wearPerLap(car.tyre, race.lapsTotal));
 
     // Costs as if the track was empty: used to decide whether the plan itself is still sound
-    const stay0 = bestStay(o, car.tyre, car.tyreState, car.damage);
-    const stopNow0 = o.stopCost + repair + o.g[0].cost + bias;
+    const stay0 = bestStay(o, car.tyre, car.tyreState, car.damage, null, legal);
+    const stopNow0 = o.stopCost + repair + first.cost + bias;
 
     // Costs with the traffic around: time lost while stuck, the rejoin position, and the undercut/cover value
     const held = heldLoss(car, race, o);
@@ -364,7 +381,7 @@ export function decideBotPit(car, race, pos = car.pos) {
         const traffic = clamp(rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) - flatTraffic, -AI_CLEAN_AIR_BONUS, AI_TRAFFIC_MAX);
         return o.stopCost + wait + traffic - positionBonus(car, race, pos, tyre, rivals, stopIn) + repair + futureCost + bias;
     };
-    const stay = held ? bestStay(o, car.tyre, car.tyreState, car.damage, held) : stay0;
+    const stay = held ? bestStay(o, car.tyre, car.tyreState, car.damage, held, legal) : stay0;
 
     if (car.plan) {
         const worn = !!next && car.tyreState - wearPerLap(car.tyre, race.lapsTotal) < AI_SAFETY_STATE;
@@ -392,7 +409,7 @@ export function decideBotPit(car, race, pos = car.pos) {
         }
     }
 
-    return stopCostWith(o.g[0].tyre, o.g[0].cost) < stay ? o.g[0].tyre : null;
+    return stopCostWith(first.tyre, first.cost) < stay ? first.tyre : null;
 }
 
 export function tyreName(id) {

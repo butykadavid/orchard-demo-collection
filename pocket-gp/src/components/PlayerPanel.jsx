@@ -5,6 +5,7 @@ import { fmtGap, fmtLap } from "../engine/format.js";
 import { repairTimeFor } from "../engine/incidents.js";
 import { allowedTyres, wearPerLap } from "../engine/pace.js";
 import { pitLoss } from "../engine/pit.js";
+import { tyreRuleMet } from "../engine/rules.js";
 import { requestPit } from "../engine/race.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
 
@@ -45,6 +46,17 @@ function CarPanel({ race, standings, idx }) {
     const damaged = car.damage > 0.05;
     const repair = repairTimeFor(car.damage);
     const crewBusy = car.pit ? 0 : Math.max(0, (race.teamBusyUntil.get(car.team) ?? 0) - race.clock);
+    if (car.dsq) {
+        return (
+            <div className="rounded-lg border border-red-900 bg-red-950/40 p-3">
+                <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-red-400">{car.team} — {car.code} disqualified</h3>
+                <p className="text-sm">
+                    {car.code} is disqualified: {car.dsq.reason}. Every car has to use at least two different compounds.
+                </p>
+            </div>
+        );
+    }
+
     if (car.dnf) {
         return (
             <div className="rounded-lg border border-red-900 bg-red-950/40 p-3">
@@ -98,6 +110,15 @@ function CarPanel({ race, standings, idx }) {
                         Tyres past the cliff: lap times are dropping and a puncture is possible.
                     </p>
                 )
+            )}
+
+            {!tyreRuleMet(car.allTyres) && !car.finished && (
+                <p className={`mb-3 rounded-md px-2 py-1.5 text-xs ${onFinalLap ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300"}`}>
+                    {onFinalLap
+                        ? `${car.code} will be disqualified: only one compound was used.`
+                        : `Tyre rule: ${car.code} has only used ${TYRES[car.tyre].name}. Stop for a different compound before the final lap or the car is disqualified.${tyreRuleMet(car.allTyres + next) ? "" : " The selected set would not count."
+                        }`}
+                </p>
             )}
 
             {car.recover > 0 && !car.pit && car.pos >= 0 && (
