@@ -1,7 +1,10 @@
 import {
+    AI_BOLD_PLAN,
     AI_CLEAN_AIR_BONUS,
     AI_COMPETITIVE_MARGIN,
+    AI_GRID_SLOTS_PER_S,
     AI_GRID_VALUE,
+    AI_HELD_LOSS,
     AI_MAX_STINTS,
     AI_MIN_STINT_FRACTION,
     AI_OUTLAP_LOSS,
@@ -22,9 +25,11 @@ import {
     TYRE_IDS,
 } from "./constants.js";
 import { cliffPenalty, lapTimeFor, overtakeRate, passFactor, punctureHazard, tyrePace, wearPerLap } from "./pace.js";
+import { trackMetrics } from "./parts.js";
 import { repairTimeFor } from "./incidents.js";
 import { neutralShare, pitLoss, pitLossNow, queueWait } from "./pit.js";
 import { legalTyres, tyreRuleMet } from "./rules.js";
+import { expectedFinish, finishValue, heldLaps, placeWeight, qualiValue } from "./weekend.js";
 import { predictWater } from "./weather.js";
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -224,11 +229,12 @@ function getPlans(entry) {
     return plans;
 }
 
-// Random pick weighted by exp(-extra cost / temperature): near-optimal options are about equally likely.
-function sampleByCost(items, costOf, rng) {
+// Random pick weighted by exp(-extra cost / temperature): near-optimal options are about equally likely. A higher temperature
+// (a bold bot) makes the options further from the best one more likely.
+function sampleByCost(items, costOf, rng, temperature = AI_PLAN_TEMPERATURE) {
     const costs = items.map(costOf);
     const min = Math.min(...costs);
-    const weights = costs.map((c) => Math.exp(-(c - min) / AI_PLAN_TEMPERATURE));
+    const weights = costs.map((c) => Math.exp(-(c - min) / temperature));
     let r = rng.next() * weights.reduce((a, b) => a + b, 0);
     for (let i = 0; i < items.length; i++) {
         r -= weights[i];
@@ -241,28 +247,49 @@ function sampleByCost(items, costOf, rng) {
 // Decisions
 // ---------------------------------------------------------------------------------------------
 
-// Starting tyre (also used in qualifying): best expected race plan for that compound under the forecast, minus
-// the value of the grid positions a faster compound gains in qualifying. Near-equal options are picked at random.
-export function pickStartTyre(weather, fraction, track, rng, lapsTotal, wearMult = 1) {
+// Starting tyre (also used in qualifying): best expected race plan for that compound under the forecast, minus what the lap time it
+// makes is worth. A quicker compound qualifies higher (`weekend` = { rank: the place the car's pace deserves, field, reversed }), a slower
+// one lower, and the place the car starts in decides how far it is expected to get by the flag (see expectedFinish, more is kept where
+// passing is hard) and how long it is stuck in the field on its first stint (see heldLaps), which the plan then has to pay for. In a reverse
+// grid weekend the qualifying place scores points as well, and the quickest lap starts last.
+export function pickStartTyre(weather, fraction, track, rng, lapsTotal, wearMult = 1, weekend = null) {
     const entry = startEntry(weather, fraction, track, lapsTotal, wearMult);
     const plans = getPlans(entry);
     const { candidates, wet } = entry.outlook;
     const slowest = Math.max(...candidates.map((c) => tyrePace(c, wet[0])));
+    const typical = candidates.reduce((s, c) => s + tyrePace(c, wet[0]), 0) / candidates.length;
+    const { tight } = trackMetrics(track);
     const options = candidates
         .map((tyre) => {
-            const costs = plans.filter((p) => p.seq[0] === tyre).map((p) => p.cost);
-            return { tyre, cost: Math.min(...costs) - AI_GRID_VALUE * (slowest - tyrePace(tyre, wet[0])) };
+            let grid;
+            let held = 0;
+            if (weekend) {
+                // places the lap time is worth against the field's typical tyre
+                const qRank = clamp(weekend.rank - AI_GRID_SLOTS_PER_S * (typical - tyrePace(tyre, wet[0])), 1, weekend.field);
+                const start = weekend.reversed ? weekend.field + 1 - qRank : qRank;
+                grid = finishValue(expectedFinish(weekend.rank, start, tight, fraction), weekend.field) + (weekend.reversed ? qualiValue(qRank) : 0);
+                held = heldLaps(start, weekend.rank, tight, lapsTotal);
+            } else grid = AI_GRID_VALUE * (slowest - tyrePace(tyre, wet[0]));
+            const costs = plans.filter((p) => p.seq[0] === tyre).map((p) => p.cost + heldCost(p, held));
+            return { tyre, cost: Math.min(...costs) - grid };
         })
         .filter((o) => Number.isFinite(o.cost));
     if (options.length === 0) return candidates[0] ?? "m";
     return sampleByCost(options, (o) => o.cost, rng).tyre;
 }
 
+// Time a plan loses on its first stint while the car is stuck in the field (`held` laps): a stop inside that window gets it out
+const heldCost = (plan, held) => AI_HELD_LOSS * Math.min(held, plan.laps[0]);
+
 // Race plan for a bot that starts on `startTyre`: [{ tyre, laps }, ...]. Null when no plan fits.
-export function choosePlan(rng, startTyre, weather, fraction, track, lapsTotal, wearMult = 1) {
+// `boldness` (0-1, see setStakes) is how far a bot that is behind in the weekend points reaches for an unusual strategy: the plans
+// that are further from the best one become more likely. `grid` ({ start, pace }: the grid place and the place the car's pace deserves)
+// lets the bot plan for the traffic it starts in: a car that has to work through the field prefers an earlier first stop.
+export function choosePlan(rng, startTyre, weather, fraction, track, lapsTotal, wearMult = 1, boldness = 0, grid = null) {
     const options = getPlans(startEntry(weather, fraction, track, lapsTotal, wearMult)).filter((p) => p.seq[0] === startTyre);
     if (options.length === 0) return null;
-    const plan = sampleByCost(options, (p) => p.cost, rng);
+    const held = grid ? heldLaps(grid.start, grid.pace, trackMetrics(track).tight, lapsTotal) : 0;
+    const plan = sampleByCost(options, (p) => p.cost + heldCost(p, held), rng, AI_PLAN_TEMPERATURE * (1 + AI_BOLD_PLAN * boldness));
     return plan.seq.map((tyre, i) => ({ tyre, laps: plan.laps[i] }));
 }
 
@@ -337,18 +364,22 @@ function rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) {
 function positionBonus(car, race, pos, tyre, rivals, stopIn) {
     let ahead = null;
     let behind = null;
+    let place = 1;
     for (const c of rivals) {
         if (c.pos > pos) {
+            place++;
             if (!ahead || c.pos < ahead.pos) ahead = c;
         } else if (!behind || c.pos > behind.pos) behind = c;
     }
 
     let gain = false;
+    let climbs = false; // the place is won (an undercut), not kept (a cover stop)
     if (ahead) {
         const gap = (ahead.pos - pos) * car.pace;
         if (gap <= AI_UNDERCUT_RANGE_S) {
             const laps = clamp((ahead.tyreState - 25) / wearPerLap(ahead.tyre, race.lapsTotal, ahead.live.wear), 1, AI_UNDERCUT_HORIZON);
             gain = (ahead.pace - freshPace(race, car, tyre)) * laps - gap - AI_OUTLAP_LOSS > 0;
+            climbs = gain;
         }
     }
     if (!gain && behind) {
@@ -357,7 +388,8 @@ function positionBonus(car, race, pos, tyre, rivals, stopIn) {
             gain = (car.pace - freshPace(race, behind, tyre)) * clamp(stopIn, 1, AI_UNDERCUT_HORIZON) - gap - AI_OUTLAP_LOSS > 0;
         }
     }
-    return gain ? AI_POSITION_VALUE * (car.aggression ?? 1) : 0;
+    // in a reverse grid weekend a place is worth what it earns in the race points, not the same everywhere
+    return gain ? AI_POSITION_VALUE * (car.aggression ?? 1) * placeWeight(race, place, climbs) : 0;
 }
 
 // Plan stints that are still to come are stretched or squeezed to fit the laps that remain after an early or late stop

@@ -1,4 +1,18 @@
-import { AI_GRID_VALUE, OVERTAKE_ZONE_SHARE, PART_PERF_TIERS, TRAIT_FULL_WEIGHT, TRAIT_SCALE_MAX, TRAIT_SLOTS } from "./constants.js";
+import {
+    AI_GRID_PUSH,
+    AI_GRID_TRAFFIC,
+    AI_GRID_VALUE,
+    AI_RANK_TRAFFIC,
+    AI_RUN_SPREAD,
+    AI_STUCK_TRAFFIC,
+    AI_TRAFFIC_RISK,
+    AI_TRAIT_RISK,
+    OVERTAKE_ZONE_SHARE,
+    PART_PERF_TIERS,
+    TRAIT_FULL_WEIGHT,
+    TRAIT_SCALE_MAX,
+    TRAIT_SLOTS,
+} from "./constants.js";
 import { PART_IDS } from "./parts.js";
 
 // ---------------------------------------------------------------------------------------------
@@ -541,6 +555,25 @@ export const traitContext = ({ metrics, weights }, laps, wet = 0, wets = null, f
     field,
 });
 
+// The context of a car that expects to start in place `start` and to run around place `rank` when the race has settled (its pace place),
+// in a field of ctx.field. The front of the field runs in clean air more of the time than the back. A car that has to climb a long way
+// expects to spend much of the race in traffic: the passing traits are worth more to it, defending ones less, it runs in the positions
+// between the two and it takes more risks to get there. A car that starts ahead of its pace place is the other way round.
+export function gridContext(ctx, start, rank) {
+    const climb = start - rank; // places to make up (negative: the car will be passed)
+    const pressure = clamp(climb / (ctx.field / 2), -1, 1);
+    const stuck = Math.min(1, (Math.max(0, climb) * (0.5 + 1.5 * ctx.tight)) / ctx.laps); // share of the race spent working through the field
+    const mid = (start + rank) / 2;
+    const front = AI_RANK_TRAFFIC * ((mid - 1) / Math.max(1, ctx.field - 1) - 0.5); // clean air is easier to find in front
+    return {
+        ...ctx,
+        traffic: clamp(AI_STUCK_TRAFFIC + front + AI_GRID_TRAFFIC * stuck - 0.1 * Math.max(0, -pressure), 0.15, 0.9),
+        statMult: { attack: Math.max(0.4, 1 + AI_GRID_PUSH * pressure), defend: Math.max(0.4, 1 - AI_GRID_PUSH * pressure) },
+        runPos: { from: Math.max(1, Math.min(start, rank) - AI_RUN_SPREAD), to: Math.min(ctx.field, Math.max(start, rank) + AI_RUN_SPREAD) },
+        risk: clamp(AI_TRAIT_RISK + AI_TRAFFIC_RISK * Math.max(0, pressure), 0, 0.6),
+    };
+}
+
 // How strongly a trait's benefits apply at this circuit: its part's weight against TRAIT_FULL_WEIGHT (1 = full, capped at TRAIT_SCALE_MAX)
 export const traitFit = (trait, ctx) => Math.min(TRAIT_SCALE_MAX, ctx.weights[trait.part] / TRAIT_FULL_WEIGHT);
 
@@ -680,16 +713,21 @@ const kindAt = (wet) => (wet < 20 ? "slick" : wet < 65 ? "inter" : "wet");
 // The share of the race in which an open condition holds, as far as it can be told beforehand
 function condFreq(c, stat, ctx) {
     switch (c.type) {
-        case "air":
-            return c.value === "clean" ? 0.6 : 0.4;
+        case "air": {
+            const traffic = ctx.traffic ?? AI_STUCK_TRAFFIC;
+            return c.value === "clean" ? 1 - traffic : traffic;
+        }
         case "wet":
             return mean(ctx.wets.map((w) => rangeFactor(w, c)));
         case "tyre":
             return sampleRange(25, 100, 12, (x) => rangeFactor(x, c)); // a stint runs the tyres from new to about 25%
         case "phase":
             return sampleRange(0, 100, 20, (x) => rangeFactor(x, c));
-        case "position":
-            return mean(Array.from({ length: ctx.field }, (_, i) => rangeFactor(i + 1, c)));
+        case "position": {
+            const from = ctx.runPos?.from ?? 1;
+            const to = ctx.runPos?.to ?? ctx.field;
+            return mean(Array.from({ length: to - from + 1 }, (_, i) => rangeFactor(from + i, c)));
+        }
         case "chaotic":
             return Math.min(1, (stat.chaoticMult ?? 1) / ctx.laps);
         case "compound":
@@ -709,13 +747,19 @@ function effectValue(e, scale, ctx) {
         if (c.type === "track") amount *= rangeFactor(ctx.metrics[c.metric] * 100, c);
         else share *= condFreq(c, stat, ctx);
     }
-    return stat.value(amount, ctx) * share;
+    return stat.value(amount, ctx) * share * (ctx.statMult?.[e.stat] ?? 1);
 }
 
-// What a trait is worth in race seconds at this circuit (drawbacks counted), as a bot reckons it
+// What a trait is worth in race seconds at this circuit (drawbacks counted), as a bot reckons it. Bots are a little risk-taking: what a
+// drawback costs counts lighter by ctx.risk (a share, AI_TRAIT_RISK unless the context says otherwise).
 export function traitValue(trait, ctx) {
     const f = traitFit(trait, ctx);
-    return trait.effects.reduce((s, e) => s + effectValue(e, f, ctx), 0) + trait.drawbacks.reduce((s, e) => s + effectValue(e, 1, ctx), 0);
+    const risk = ctx.risk ?? AI_TRAIT_RISK;
+    const drawbacks = trait.drawbacks.reduce((s, e) => {
+        const v = effectValue(e, 1, ctx);
+        return s + (v < 0 ? v * (1 - risk) : v);
+    }, 0);
+    return trait.effects.reduce((s, e) => s + effectValue(e, f, ctx), 0) + drawbacks;
 }
 
 // The traits a bot (or the player's "suggest" button) would run: the best unlocked trait of each part, the best parts first.

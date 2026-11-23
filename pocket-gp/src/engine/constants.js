@@ -127,12 +127,31 @@ export const AI_UNDERCUT_RANGE_S = 2.5; // s: undercuts only work on (and are on
 export const AI_UNDERCUT_HORIZON = 8; // laps: how far ahead a bot reckons the rival's stop
 export const AI_OUTLAP_LOSS = 1; // s: slow out-lap on fresh tyres
 export const AI_AGGRESSION = [0.7, 1.3]; // per-bot range: scales how readily it takes tactical risks
+export const AI_TRAIT_RISK = 0.2; // bots count the drawbacks of a trait this much (share) lighter than they are: a slightly risk-taking choice of traits
+export const AI_TRAFFIC_RISK = 0.25; // extra risk appetite (share) of a bot that expects to spend the race working through the field
+export const AI_GRID_PUSH = 0.8; // how much more a trait that helps passing is worth (and one that helps defending is worth less) to a bot that has to climb the whole way up the field, and the other way round
+export const AI_GRID_TRAFFIC = 0.5; // share of the race a bot expects to be stuck in traffic beyond the usual when it has to climb as far as it can
+export const AI_STUCK_TRAFFIC = 0.4; // share of the race a bot normally expects to run in traffic (the rest in clean air)
+export const AI_RANK_TRAFFIC = 0.4; // how much less traffic the front of the field expects than the back (share of the race, front to back)
+export const AI_RUN_SPREAD = 2; // places: how far from its expected running place a bot reckons its race will take it
+export const AI_HELD_LOSS = 0.5; // s per lap a car that has to work through the field loses while it is stuck behind slower cars on its first stint
+export const AI_FINISH_VALUE = 1; // race seconds a bot values per place at the flag, points or not
 
 // ---- Reverse grid weekends ----
 // A reverse grid weekend scores the qualifying (by the lap time, so the fastest car scores the most and starts last) and the race;
 // the most points over the weekend wins, the better race result settles a tie.
 export const QUALI_POINTS = [12, 10, 8, 7, 6, 5, 4, 3, 2, 1];
 export const RACE_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+export const AI_POINT_VALUE = 2.5; // race seconds a bot values per weekend point
+export const AI_GRID_SLOTS_PER_S = 2.5; // places a second of qualifying lap time is worth on the grid
+export const AI_GRID_KEPT = 0.2; // share of the gap between the starting place and the pace place that is still there at the flag (on an easy track over a full distance)
+export const AI_GRID_KEPT_TIGHT = 0.5; // more of it is kept where passing is hard (per unit of the 0-1 passing difficulty)
+export const AI_GRID_KEPT_SHORT = 0.2; // and in a short race (per unit of the share of the distance cut)
+export const AI_AVG_PLACE_POINTS = 2.5; // points a place is worth on average in the race (the weight of a place is judged against this)
+export const AI_PLACE_WEIGHT = [0.3, 2.5]; // limits of the weight of a place in an undercut or a cover stop
+export const AI_BOLD_DEFICIT = 10; // points a bot can be behind the expected weekend winner before it is as bold as it gets
+export const AI_BOLD_PLAN = 1.5; // the plan temperature grows by this much at full boldness (it picks plans that are further from the best one)
+export const AI_BOLD_AGGRESSION = 0.3; // and its aggression by this much
 
 export const TYRE_IDS = ["s", "m", "h", "i", "w"];
 

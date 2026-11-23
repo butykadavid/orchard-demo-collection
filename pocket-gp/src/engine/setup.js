@@ -1,6 +1,6 @@
-import { DEFAULT_NEW_CAR_RATING, DEFAULT_RELIABILITY, TRAIT_SLOTS } from "./constants.js";
+import { DEFAULT_NEW_CAR_RATING, DEFAULT_RELIABILITY, RATING_PAR, SECONDS_PER_POINT, TRAIT_SLOTS } from "./constants.js";
 import { PART_IDS, carRating, failureOdds, makePart, ratingLoss, trackProfile, weightedRating } from "./parts.js";
-import { resolveFx, suggestTraits, sumFx, traitBreakdown, traitContext, traitNow, validTraits, zeroFx } from "./traits.js";
+import { gridContext, resolveFx, suggestTraits, sumFx, traitBreakdown, traitContext, traitNow, validTraits, zeroFx } from "./traits.js";
 import { predictWater } from "./weather.js";
 
 // A team's car as it goes into a race: the parts and the chosen traits resolved against one circuit.
@@ -75,16 +75,35 @@ export function qualifyingSetup(setup, wet, kind) {
     return { ...setup, ...resolveFx(total) };
 }
 
+// The pecking order the teams expect on the day: every driver ranked (1 = quickest) by the lap time that car and driver are worth at this
+// circuit, traits and tyres aside. Map of driver code to rank.
+export function paceRanks({ drivers, cars, track }) {
+    const { weights } = trackProfile(track);
+    const loss = new Map();
+    for (const d of drivers) if (!loss.has(d.team)) loss.set(d.team, ratingLoss(weightedRating(cars[d.team] ?? flatCar(), weights)));
+    const times = drivers.map((d) => ({ code: d.code, t: (RATING_PAR - d.skill) * SECONDS_PER_POINT + loss.get(d.team) }));
+    times.sort((a, b) => a.t - b.t);
+    return new Map(times.map((x, i) => [x.code, i + 1]));
+}
+
 // Setups for every team of the grid. The player's team runs the traits it picked (or the suggested ones when none were
-// picked); the bots choose theirs for the circuit and the weather they expect.
-export function buildSetups({ drivers, cars, track, weather, fraction, lapsTotal, playerTeam, playerTraits, rng, slots = TRAIT_SLOTS }) {
+// picked); the bots choose theirs for the circuit, the weather they expect and the place they expect to run in. `ranks` (see paceRanks)
+// gives the place each car's pace deserves: that is where a car starts and runs in a normal weekend, in a reverse grid weekend the
+// teams know that the quickest cars start at the back and choose their traits for the traffic they expect.
+export function buildSetups({ drivers, cars, track, weather, fraction, lapsTotal, playerTeam, playerTraits, rng, ranks = null, reversed = false, slots = TRAIT_SLOTS }) {
     const wets = wetnessProfile(weather, fraction, lapsTotal);
     const wet = wets.reduce((s, w) => s + w, 0) / wets.length;
     const setups = new Map();
     for (const d of drivers) {
         if (setups.has(d.team)) continue;
         const car = cars[d.team] ?? flatCar();
-        const ctx = traitContext(trackProfile(track), lapsTotal, wet, wets);
+        let ctx = traitContext(trackProfile(track), lapsTotal, wet, wets, drivers.length);
+        if (ranks) {
+            // the team's drivers start the other way round from their pace place in a reverse grid weekend; the traits are for the car, so they get the average
+            const mine = drivers.filter((x) => x.team === d.team).map((x) => ranks.get(x.code));
+            const rank = mine.reduce((s, r) => s + r, 0) / mine.length;
+            ctx = gridContext(ctx, reversed ? drivers.length + 1 - rank : rank, rank);
+        }
         const picks = d.team === playerTeam && playerTraits ? playerTraits : suggestTraits(car, ctx, { slots, rng: d.team === playerTeam ? null : rng });
         setups.set(d.team, buildSetup({ team: d.team, car, track, lapsTotal, traitIds: picks, wet, wets, slots }));
     }

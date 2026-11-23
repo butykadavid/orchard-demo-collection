@@ -52,6 +52,7 @@ import { PARTS, errorFactor } from "./parts.js";
 import { pitDriveTime, queueWait, rollStopTime } from "./pit.js";
 import { tyreRuleMet, tyreRuleReason } from "./rules.js";
 import { BUCKETS, getTrait, resolveFx, traitNow } from "./traits.js";
+import { setStakes } from "./weekend.js";
 import { waterAt, rainAt } from "./weather.js";
 
 const ERROR_REASONS = ["spins and hits the barrier", "goes off and is stuck in the gravel", "crashes out"];
@@ -81,6 +82,8 @@ export function createRace({ grid, track, weather, fraction, playerTeam, reverse
         gridPos: g.gridPos,
         qualiPos: g.qualiPos ?? g.gridPos, // place of the qualifying lap time (the grid place, except in a reverse grid weekend)
         qualiPts: g.qualiPts ?? 0, // weekend points the qualifying earned (reverse grid weekends only)
+        paceRank: g.paceRank ?? g.gridPos, // the place the teams expected the car's pace to deserve
+        boldness: 0, // how far a bot that is behind in the weekend points reaches for an unusual strategy (see setStakes)
         pos: (-(g.gridPos - 1) * START_GAP_S) / track.optLapTime, // in laps, negative = behind the line
         prevPos: 0,
         speed: 0,
@@ -142,8 +145,10 @@ export function createRace({ grid, track, weather, fraction, playerTeam, reverse
     }));
     cars.forEach((c) => (c.prevPos = c.pos));
 
+    // In a reverse grid weekend the points decide: the bots plan for what is at stake for each car
+    if (reversed) setStakes(cars, track, fraction);
     cars.forEach((c) => {
-        if (!c.isPlayer) c.plan = choosePlan(rng, c.tyre, weather, fraction, track, lapsTotal, c.setup.wear);
+        if (!c.isPlayer) c.plan = choosePlan(rng, c.tyre, weather, fraction, track, lapsTotal, c.setup.wear, c.boldness, { start: c.gridPos, pace: c.paceRank });
     });
 
     return {
