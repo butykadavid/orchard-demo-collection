@@ -13,7 +13,7 @@ export default function QualifyingResults({ results, track, reversed, playerTeam
                 <div>
                     <h1 className="text-lg font-bold tracking-tight">Qualifying — {track.location}</h1>
                     <p className="text-xs text-zinc-500">
-                        {reversed ? "Reversed grid: slowest car starts on pole" : `Pole: ${pole.driver.name}`}
+                        {reversed ? "Reversed grid: slowest car starts on pole, the fastest laps score weekend points (12-10-8-7-6-5-4-3-2-1)" : `Pole: ${pole.driver.name}`}
                     </p>
                 </div>
             </header>
@@ -28,6 +28,7 @@ export default function QualifyingResults({ results, track, reversed, playerTeam
                             <th className="px-2 py-2">Tyre</th>
                             <th className="px-3 py-2 text-right">Time</th>
                             <th className="px-3 py-2 text-right">Gap</th>
+                            {reversed && <th className="px-3 py-2 text-right">Pts</th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -49,6 +50,7 @@ export default function QualifyingResults({ results, track, reversed, playerTeam
                                     <td className="px-3 py-1 text-right font-mono text-zinc-500">
                                         {r.time === best ? "" : `+${Math.abs(r.time - best).toFixed(3)}`}
                                     </td>
+                                    {reversed && <td className="px-3 py-1 text-right font-mono text-amber-400">{r.qualiPts > 0 ? `+${r.qualiPts}` : ""}</td>}
                                 </tr>
                             );
                         })}

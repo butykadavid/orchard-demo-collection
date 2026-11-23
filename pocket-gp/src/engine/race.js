@@ -62,7 +62,7 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 // Setup
 // ---------------------------------------------------------------------------------------------
 
-export function createRace({ grid, track, weather, fraction, playerTeam, rng }) {
+export function createRace({ grid, track, weather, fraction, playerTeam, reversed = false, rng }) {
     const lapsTotal = lapsTotalFor(track, fraction);
 
     const cars = grid.map((g) => ({
@@ -79,6 +79,8 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         color: g.driver.color,
         isPlayer: playerTeam !== null && playerTeam !== undefined && g.driver.team === playerTeam,
         gridPos: g.gridPos,
+        qualiPos: g.qualiPos ?? g.gridPos, // place of the qualifying lap time (the grid place, except in a reverse grid weekend)
+        qualiPts: g.qualiPts ?? 0, // weekend points the qualifying earned (reverse grid weekends only)
         pos: (-(g.gridPos - 1) * START_GAP_S) / track.optLapTime, // in laps, negative = behind the line
         prevPos: 0,
         speed: 0,
@@ -149,6 +151,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         weather,
         fraction,
         lapsTotal,
+        reversed, // a reverse grid weekend: qualifying and race score points, see weekend.js
         rng,
         cars,
         order: cars.slice(),

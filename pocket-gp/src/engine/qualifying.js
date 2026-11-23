@@ -2,12 +2,15 @@ import { TYRES } from "./constants.js";
 import { lapNoise, lapTimeFor, lapsTotalFor } from "./pace.js";
 import { pickStartTyre } from "./ai.js";
 import { buildSetups, qualifyingSetup } from "./setup.js";
+import { qualiPoints } from "./weekend.js";
 import { waterAt } from "./weather.js";
 
 // One-click qualifying: a single flying lap per driver on the chosen starting tyre.
-// `reversed` flips the grid (slowest on pole). `cars` holds every team's parts; the player's team runs `playerTraits`
+// `reversed` flips the grid (slowest on pole) and scores the qualifying: the quickest laps earn points (see QUALI_POINTS) that count
+// towards the weekend. `cars` holds every team's parts; the player's team runs `playerTraits`
 // (suggested ones when not given) and the bots choose theirs for the circuit and the forecast. Each result carries the
-// `setup` the car takes into the race.
+// `setup` the car takes into the race and the place of its lap time (`qualiPos`, 1 = quickest, also in a reverse grid weekend)
+// with the points it earned.
 export function runQualifying({ drivers, cars, track, weather, fraction, playerTeam, playerTraits, playerTyres, reversed, rng }) {
     const wet = waterAt(weather, 0, fraction);
     const lapsTotal = lapsTotalFor(track, fraction);
@@ -21,6 +24,13 @@ export function runQualifying({ drivers, cars, track, weather, fraction, playerT
         return { driver, tyre, time, setup };
     });
 
+    results
+        .slice()
+        .sort((a, b) => a.time - b.time)
+        .forEach((r, i) => {
+            r.qualiPos = i + 1;
+            r.qualiPts = reversed ? qualiPoints(i + 1) : 0;
+        });
     results.sort((a, b) => (reversed ? b.time - a.time : a.time - b.time));
     return results.map((r, i) => ({ ...r, gridPos: i + 1 }));
 }

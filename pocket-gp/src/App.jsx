@@ -53,6 +53,7 @@ export default function App() {
                 weather: config.weather,
                 fraction: config.fraction,
                 playerTeam: config.playerTeam,
+                reversed: config.reversed,
                 rng: createRng(config.seed + 2),
             })
         );

@@ -128,6 +128,12 @@ export const AI_UNDERCUT_HORIZON = 8; // laps: how far ahead a bot reckons the r
 export const AI_OUTLAP_LOSS = 1; // s: slow out-lap on fresh tyres
 export const AI_AGGRESSION = [0.7, 1.3]; // per-bot range: scales how readily it takes tactical risks
 
+// ---- Reverse grid weekends ----
+// A reverse grid weekend scores the qualifying (by the lap time, so the fastest car scores the most and starts last) and the race;
+// the most points over the weekend wins, the better race result settles a tie.
+export const QUALI_POINTS = [12, 10, 8, 7, 6, 5, 4, 3, 2, 1];
+export const RACE_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+
 export const TYRE_IDS = ["s", "m", "h", "i", "w"];
 
 // pace: constant offset per lap (s); wear: legacy wear factor; wetK: slick penalty per wetness point
