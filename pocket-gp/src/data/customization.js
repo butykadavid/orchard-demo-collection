@@ -4,21 +4,24 @@ import { defaultCars } from "./cars.js";
 import { DEFAULT_PIT_LANE, LEGACY_DRIVER_BASE, LEGACY_DRIVER_SCALE, RATING_MAX, TYRE_IDS, TYRES } from "../engine/constants.js";
 import { isValidCar } from "../engine/parts.js";
 import { flatCar } from "../engine/setup.js";
+import { TRAITS, normalizeTraits, replaceTraits } from "../engine/traits.js";
 
-// User customisation (sandbox mode): the grid, the cars, the circuits and the tyre compounds can be edited and are
+// User customisation (sandbox mode): the grid, the cars, the circuits, the tyre compounds and the car part traits can be edited and are
 // saved in an Orchard store (the SDK falls back to localStorage when the app runs outside Orchard).
-// DRIVERS, CARS, TRACKS and TYRES are shared module-level objects that the whole app imports, so edits are
+// DRIVERS, CARS, TRACKS, TYRES and TRAITS are shared module-level objects that the whole app imports, so edits are
 // applied to them in place and the defaults are snapshotted at load time.
 // Inside Orchard the saved data arrives asynchronously: `onCustomizationLoaded` tells the UI to refresh.
 
 const LEGACY_STORAGE_KEY = "gp-manager-customization-v1"; // where earlier versions kept the data (localStorage only)
 const store = createStore("pocketGpCustomization", { customization: null });
 const loadedListeners = new Set();
-const SECTIONS = ["drivers", "cars", "tracks", "tyres"];
+const SECTIONS = ["drivers", "cars", "tracks", "tyres", "traits"];
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-const DEFAULTS = { drivers: clone(DRIVERS), cars: clone(CARS), tracks: clone(TRACKS), tyres: clone(TYRES) };
+const DEFAULTS = { drivers: clone(DRIVERS), cars: clone(CARS), tracks: clone(TRACKS), tyres: clone(TYRES), traits: clone(TRAITS) };
+
+export const MAX_TRAITS = 120;
 
 // The default compounds cannot be removed (the wet-weather ones are needed in the rain); users add dry compounds on top
 export const BUILTIN_TYRE_IDS = Object.keys(DEFAULTS.tyres);
@@ -35,6 +38,7 @@ function apply(data) {
     for (const id of Object.keys(TYRES)) delete TYRES[id];
     for (const [id, t] of entries) TYRES[id] = t;
     TYRE_IDS.splice(0, TYRE_IDS.length, ...entries.map(([id]) => id));
+    replaceTraits(data.traits);
 }
 
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
@@ -60,6 +64,11 @@ function withCars(data) {
     const cars = {};
     for (const d of data.drivers) cars[d.team] ??= data.cars?.[d.team] ?? flatCar();
     return { ...data, cars };
+}
+
+// Saved data from before the trait editor gets the default traits; broken traits in saved data are dropped
+function withTraits(data) {
+    return { ...data, traits: Array.isArray(data.traits) ? normalizeTraits(data.traits) : clone(DEFAULTS.traits) };
 }
 
 function validCars(cars) {
@@ -101,7 +110,9 @@ function isValid(data) {
         data.tracks.length >= 1 &&
         data.tracks.every((t) => finite(t.id) && typeof t.location === "string" && finite(t.laps) && finite(t.optLapTime) && finite(t.ovtkMultiplier)) &&
         new Set(data.tracks.map((t) => t.id)).size === data.tracks.length &&
-        validTyres(data.tyres)
+        validTyres(data.tyres) &&
+        Array.isArray(data.traits) &&
+        data.traits.length <= MAX_TRAITS
     );
 }
 
@@ -110,7 +121,7 @@ function persist() {
 }
 
 export function currentCustomization() {
-    return clone({ drivers: DRIVERS, cars: CARS, tracks: TRACKS, tyres: TYRES });
+    return clone({ drivers: DRIVERS, cars: CARS, tracks: TRACKS, tyres: TYRES, traits: TRAITS });
 }
 
 export function defaultCustomization() {
@@ -127,18 +138,18 @@ export function isCustomized(section) {
 export function saveCustomization(data) {
     data = migrate(data);
     if (!data?.drivers || !Array.isArray(data.drivers)) return false;
-    data = withCars(data);
+    data = withTraits(withCars(data));
     if (!isValid(data) || !data.tracks.every((t) => finite(t.pitLane) && t.pitLane > 0)) return false;
     apply(clone(data));
     persist();
     return true;
 }
 
-// Restore the defaults, either everything or a single section ("drivers" | "cars" | "tracks" | "tyres")
+// Restore the defaults, either everything or a single section ("drivers" | "cars" | "tracks" | "tyres" | "traits")
 export function resetCustomization(section) {
     const next = currentCustomization();
     for (const s of section ? [section] : SECTIONS) next[s] = clone(DEFAULTS[s]);
-    apply(withCars(next));
+    apply(withTraits(withCars(next)));
     persist();
 }
 
@@ -152,7 +163,7 @@ function readLegacy() {
     try {
         const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? "null");
         const data = migrate(saved);
-        return Array.isArray(data?.drivers) && isValid(withCars(data)) ? data : null;
+        return Array.isArray(data?.drivers) && isValid(withTraits(withCars(data))) ? data : null;
     } catch {
         return null;
     }
@@ -166,7 +177,7 @@ store.subscribe((state) => {
     if (legacy) saved = readLegacy();
     saved = migrate(saved);
     if (!Array.isArray(saved?.drivers)) return;
-    saved = withCars(saved);
+    saved = withTraits(withCars(saved));
     if (!isValid(saved)) return;
     const data = withPitLanes(saved);
     if (JSON.stringify(data) === JSON.stringify(currentCustomization())) return;
