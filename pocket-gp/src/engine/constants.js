@@ -64,7 +64,7 @@ export const LAP1_INCIDENT_MULT = 5; // multiplier on collision and driver-error
 
 // ---- Race control: safety car, virtual safety car, red flag ----
 export const SC_SPEED = 0.55; // speed behind the safety car as a share of the circuit's reference racing speed (the same for every car)
-export const SC_CATCHUP = 0.65; // cars that are not bunched up yet may run this share of the reference speed (and of their own free speed) to close the gap
+export const SC_CATCHUP = 0.75; // cars that are not bunched up yet may run this share of the reference speed (and of their own free speed) to close the gap
 export const SC_GAP_S = 0.5; // s: gap (at the slow speed) the field closes up to behind the car in front under the safety car
 export const SC_COLLECT_MIN = 0.5; // when a safety car comes out the whole field slows to the same speed and the leader slows further, so the field has closed up when he crosses the line; he runs at least this share of that speed (if the field is too spread out for the next line, he takes the one after)
 export const SC_LAPS = [3, 5]; // laps (min, max) the field runs behind the safety car before it comes in

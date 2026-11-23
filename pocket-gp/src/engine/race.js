@@ -835,7 +835,7 @@ export function stepRace(race, dt) {
             car.crawlWobble = Math.max(-NEUTRAL_WOBBLE, Math.min(NEUTRAL_WOBBLE, car.crawlWobble * 0.98 + rng.range(-0.2, 0.2) * NEUTRAL_WOBBLE));
             const base = crawl * (1 + car.crawlWobble);
             if (mode === "vsc") speed = Math.min(free, base);
-            else if (collecting) speed = Math.min(free, base * (ahead ? 1 : collectSlow)); // everybody the same, the leader slower
+            else if (collecting && bunched()) speed = Math.min(free, base * (ahead ? 1 : collectSlow)); // everybody the same, the leader slower
             else speed = bunched() ? Math.min(free, base) : Math.min(free * SC_CATCHUP, (base * SC_CATCHUP) / SC_SPEED);
         }
 
