@@ -1,6 +1,7 @@
+import { TYRES } from "./constants.js";
 import { lapNoise, lapTimeFor, lapsTotalFor } from "./pace.js";
 import { pickStartTyre } from "./ai.js";
-import { buildSetups } from "./setup.js";
+import { buildSetups, qualifyingSetup } from "./setup.js";
 import { waterAt } from "./weather.js";
 
 // One-click qualifying: a single flying lap per driver on the chosen starting tyre.
@@ -16,7 +17,7 @@ export function runQualifying({ drivers, cars, track, weather, fraction, playerT
         const setup = setups.get(driver.team);
         // Drivers of the player's team start on the tyre chosen for them, everyone else on the bots' choice
         const tyre = driver.team === playerTeam ? (playerTyres[driver.code] ?? "m") : pickStartTyre(weather, fraction, track, rng, lapsTotal, setup.wear);
-        const time = lapTimeFor(driver, setup, track, tyre, 100, wet, lapNoise(rng), true);
+        const time = lapTimeFor(driver, qualifyingSetup(setup, wet, TYRES[tyre].kind), track, tyre, 100, wet, lapNoise(rng), true);
         return { driver, tyre, time, setup };
     });
 

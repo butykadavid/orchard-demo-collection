@@ -3,7 +3,7 @@ import { Dices, Flag, RefreshCw } from "lucide-react";
 import { CARS, DRIVERS, TRACKS } from "../data/index.js";
 import { RACE_FRACTIONS, TYRE_IDS, TYRES } from "../engine/constants.js";
 import { allowedTyres, lapsTotalFor, wearPerLap } from "../engine/pace.js";
-import { buildSetup, expectedWetness, flatCar } from "../engine/setup.js";
+import { buildSetup, flatCar, wetnessProfile } from "../engine/setup.js";
 import { trackProfile } from "../engine/parts.js";
 import { suggestTraits, traitContext, validTraits } from "../engine/traits.js";
 import { overtakingLabel } from "../engine/format.js";
@@ -87,9 +87,10 @@ export default function Setup({ initial, onRunQualifying }) {
 
     // The player's car resolved for this circuit and the expected weather
     const car = playerTeam !== null ? (CARS[playerTeam] ?? flatCar()) : null;
-    const expectedWet = useMemo(() => expectedWetness(weather, fraction, lapsTotal), [weather, fraction, lapsTotal]);
-    const traits = car ? (picks ? validTraits(car, picks) : suggestTraits(car, traitContext(trackProfile(track), lapsTotal, expectedWet))) : [];
-    const setup = car ? buildSetup({ team: playerTeam, car, track, lapsTotal, traitIds: traits, wet: expectedWet }) : null;
+    const wets = useMemo(() => wetnessProfile(weather, fraction, lapsTotal), [weather, fraction, lapsTotal]);
+    const expectedWet = wets.reduce((s, w) => s + w, 0) / wets.length;
+    const traits = car ? (picks ? validTraits(car, picks) : suggestTraits(car, traitContext(trackProfile(track), lapsTotal, expectedWet, wets))) : [];
+    const setup = car ? buildSetup({ team: playerTeam, car, track, lapsTotal, traitIds: traits, wet: expectedWet, wets }) : null;
     const suggest = () => setPicks(null);
     const chooseTeam = (name) => {
         setPlayerTeam(name);
@@ -200,7 +201,7 @@ export default function Setup({ initial, onRunQualifying }) {
 
                 {setup && (
                     <Card title={`Car and traits — ${playerTeam}`}>
-                        <CarTraits car={car} setup={setup} wet={expectedWet} lapsTotal={lapsTotal} picks={setup.traits} onChange={setPicks} onSuggest={suggest} />
+                        <CarTraits car={car} setup={setup} wet={expectedWet} wets={wets} lapsTotal={lapsTotal} picks={setup.traits} onChange={setPicks} onSuggest={suggest} />
                     </Card>
                 )}
 

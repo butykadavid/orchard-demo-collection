@@ -32,7 +32,7 @@ export function lapTimeFor(driver, setup, track, tyreId, tyreState, wet, noise =
         track.optLapTime +
         (RATING_PAR - driver.skill) * SECONDS_PER_POINT +
         setup.carLoss -
-        (setup.wetGain * wet) / 100 -
+        setup.pace -
         (qualifying ? setup.quali : 0) +
         noise +
         tyreLoss(tyreState) * (1 - setup.grip) +
@@ -63,17 +63,28 @@ export function overtakeRate(delta, multiplier, chaseLaps = 0, factor = 1) {
     return (rate + 0.25 * Math.min(chaseLaps, 2)) * overtakeEase(multiplier) * factor;
 }
 
-// How the traits of the two cars change a pass: the attacker's attack (and launch on a chaotic lap) against the defender's defend.
+// How the traits of the two cars change a pass: the attacker's attack against the defender's defend (setups, or what the race
+// makes of them, see car.live: the conditions of the traits are already taken into account).
 // `zone` says where it happens: true on the straights and in the braking zones, false in the corners, null when it does not matter
-// (the attacker's zone-specific bonuses are then blended by how many passes happen where).
-export function passFactor(attacker, defender, chaotic = false, zone = null) {
-    const where = zone === null ? OVERTAKE_ZONE_SHARE * attacker.attackZone + (1 - OVERTAKE_ZONE_SHARE) * attacker.attackCorner : zone ? attacker.attackZone : attacker.attackCorner;
-    return Math.max(0, 1 + attacker.attack + where + (chaotic ? attacker.launch : 0)) * (1 - defender.defend);
+// (the zone-specific bonuses are then blended by how many passes happen where).
+const byZone = (fx, name, zone) => {
+    const inZone = fx[`${name}Zone`];
+    const inCorner = fx[`${name}Corner`];
+    return fx[name] + (zone === null ? OVERTAKE_ZONE_SHARE * inZone + (1 - OVERTAKE_ZONE_SHARE) * inCorner : zone ? inZone : inCorner);
+};
+
+export function passFactor(attacker, defender, zone = null) {
+    return Math.max(0, 1 + byZone(attacker, "attack", zone)) * (1 - clamp(byZone(defender, "defend", zone), -1, 0.8));
 }
 
-// What one trait's effects (see traitBreakdown) add to the attacker's pass rate where and when it happens: the attacker side of passFactor
-export function attackBonus(fx, chaotic, zone) {
-    return fx.attack + (zone ? fx.attackZone : fx.attackCorner) + (chaotic ? fx.launch : 0);
+// What one trait's effects (see traitNow) add to the attacker's pass rate where it happens: the attacker side of passFactor
+export function attackBonus(fx, zone) {
+    return fx.attack + (zone ? fx.attackZone : fx.attackCorner);
+}
+
+// The defender side: what one trait's effects take off the passes suffered where it happens
+export function defendBonus(fx, zone) {
+    return fx.defend + (zone ? fx.defendZone : fx.defendCorner);
 }
 
 // Tyre wear in % per lap. Scales with race length so a shortened race wears tyres faster per lap; `mult` is the car's wear multiplier.

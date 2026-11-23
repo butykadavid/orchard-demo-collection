@@ -145,7 +145,7 @@ function bestStay(o, tyre, state, damage = 0, held = null, legal = null) {
 function outlookFor(car, race, pos, laps = null) {
     const R = laps ?? Math.max(1, race.lapsTotal - Math.floor(pos) - 1);
     const wet = wetProfile(race.weather, race.fraction, race.clock, race.wet, R, car.foresight ?? 1);
-    return buildOutlook(wet, R, race.lapsTotal / car.setup.wear, race.track);
+    return buildOutlook(wet, R, race.lapsTotal / car.live.wear, race.track);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -297,7 +297,7 @@ export function planRestart(race, car, laps) {
 // it never reads the plans of other cars, human or bot, but assumes how they will behave.
 // ---------------------------------------------------------------------------------------------
 
-const freshPace = (race, car, tyre) => lapTimeFor(car.driver, car.setup, race.track, tyre, 100, race.wet, 0);
+const freshPace = (race, car, tyre) => lapTimeFor(car.driver, car.live, race.track, tyre, 100, race.wet, 0);
 
 // Cars that are racing on track (not retired, finished or in the pit lane)
 const racingRivals = (race, car) => race.cars.filter((c) => c !== car && !c.dnf && !c.finished && !c.pit && !c.parked && c.pos >= 0);
@@ -310,7 +310,7 @@ function heldLoss(car, race, o) {
     if (!ahead || ahead.dnf || ahead.finished || ahead.pit) return null;
     const L = (car.trafficLoss + car.lossAcc) / 2;
     if (L < 0.05) return null;
-    const rate = overtakeRate(ahead.pace - car.pace, race.track.ovtkMultiplier, car.chaseLaps, passFactor(car.setup, ahead.setup));
+    const rate = overtakeRate(ahead.pace - car.pace, race.track.ovtkMultiplier, car.chaseLaps, passFactor(car.live, ahead.live));
     return { L, n: clamp(1 / Math.max(rate, 0.08), 0.5, o.R) };
 }
 
@@ -325,7 +325,7 @@ function rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) {
         if (c.pos <= rejoinPos || (c.pos - rejoinPos) * mine > AI_TRAFFIC_WINDOW_S) continue;
         const L = c.pace - mine;
         if (L <= 0) continue;
-        const rate = overtakeRate(L, race.track.ovtkMultiplier, 0, passFactor(car.setup, c.setup));
+        const rate = overtakeRate(L, race.track.ovtkMultiplier, 0, passFactor(car.live, c.live));
         cost += L * clamp(1 / Math.max(rate, 0.08), 0.3, o.R);
     }
     return Math.min(cost, AI_TRAFFIC_MAX);
@@ -347,7 +347,7 @@ function positionBonus(car, race, pos, tyre, rivals, stopIn) {
     if (ahead) {
         const gap = (ahead.pos - pos) * car.pace;
         if (gap <= AI_UNDERCUT_RANGE_S) {
-            const laps = clamp((ahead.tyreState - 25) / wearPerLap(ahead.tyre, race.lapsTotal, ahead.setup.wear), 1, AI_UNDERCUT_HORIZON);
+            const laps = clamp((ahead.tyreState - 25) / wearPerLap(ahead.tyre, race.lapsTotal, ahead.live.wear), 1, AI_UNDERCUT_HORIZON);
             gain = (ahead.pace - freshPace(race, car, tyre)) * laps - gap - AI_OUTLAP_LOSS > 0;
         }
     }
@@ -402,7 +402,7 @@ export function decideBotPit(car, race, pos = car.pos) {
     const current = car.plan?.[car.stintIdx];
     const next = car.plan?.[car.stintIdx + 1];
     const plannedStop = current ? current.laps + car.jitter : null;
-    const stopIn = Math.max(1, plannedStop !== null ? plannedStop - stintLaps : (car.tyreState - 25) / wearPerLap(car.tyre, race.lapsTotal, car.setup.wear));
+    const stopIn = Math.max(1, plannedStop !== null ? plannedStop - stintLaps : (car.tyreState - 25) / wearPerLap(car.tyre, race.lapsTotal, car.live.wear));
 
     // Costs as if the track was empty: used to decide whether the plan itself is still sound
     const stay0 = bestStay(o, car.tyre, car.tyreState, car.damage, null, legal);
@@ -429,7 +429,7 @@ export function decideBotPit(car, race, pos = car.pos) {
     const stay = held ? bestStay(o, car.tyre, car.tyreState, car.damage, held, legal) : stay0;
 
     if (car.plan) {
-        const worn = !!next && car.tyreState - wearPerLap(car.tyre, race.lapsTotal, car.setup.wear) < AI_SAFETY_STATE;
+        const worn = !!next && car.tyreState - wearPerLap(car.tyre, race.lapsTotal, car.live.wear) < AI_SAFETY_STATE;
         const due = !!next && (stintLaps >= plannedStop || worn);
         const planCost0 = due ? o.stopCost + repair + o.gc[0][next.tyre] + bias : stay0;
         if (planCost0 - Math.min(stay0, stopNow0) > AI_REPLAN_MARGIN) {

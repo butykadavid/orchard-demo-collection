@@ -16,8 +16,8 @@ const fitLabel = (f) => `${Math.round(f * 100)}% effect here`;
 const fitColor = (f) => (f >= 0.8 ? "text-emerald-400" : f >= 0.45 ? "text-amber-400" : "text-zinc-500");
 
 // The player's car for the weekend: its six parts, what the circuit asks of them, and the traits to run (up to `setup.slots`, one per part)
-export default function CarTraits({ car, setup, wet, lapsTotal, picks, onChange, onSuggest }) {
-    const ctx = traitContext(setup, lapsTotal, wet);
+export default function CarTraits({ car, setup, wet, wets = null, lapsTotal, picks, onChange, onSuggest }) {
+    const ctx = traitContext(setup, lapsTotal, wet, wets);
     const full = picks.length >= setup.slots;
 
     const toggle = (trait) => {
@@ -59,7 +59,8 @@ export default function CarTraits({ car, setup, wet, lapsTotal, picks, onChange,
                                 <Bar value={p.rel} className="bg-sky-500" />
                                 <span className="text-right font-mono text-zinc-300">{p.rel}</span>
                             </div>
-                            <div className="mt-2 grid gap-1.5 sm:grid-cols-3">
+                            <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-1.5">
+                                {traitsOfPart(id).length === 0 && <span className="text-[10px] text-zinc-500">No traits for this part (add some on the Customize page).</span>}
                                 {traitsOfPart(id).map((t) => {
                                     const unlocked = isUnlocked(car, t);
                                     const on = picks.includes(t.id);
@@ -82,8 +83,8 @@ export default function CarTraits({ car, setup, wet, lapsTotal, picks, onChange,
                                             {unlocked ? (
                                                 <>
                                                     <span className="flex flex-col text-[10px]">
-                                                        {effectLines(t).map((l) => (
-                                                            <span key={l.text} className={l.bad ? "text-red-400" : "text-zinc-400"}>
+                                                        {effectLines(t).map((l, i) => (
+                                                            <span key={i} className={l.bad ? "text-red-400" : "text-zinc-400"}>
                                                                 {l.bad ? "- " : "+ "}
                                                                 {l.text}
                                                             </span>

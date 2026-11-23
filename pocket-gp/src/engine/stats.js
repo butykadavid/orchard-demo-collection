@@ -1,5 +1,5 @@
 import { fmtLap } from "./format.js";
-import { fxLines, getTrait } from "./traits.js";
+import { getTrait } from "./traits.js";
 
 // Post-race statistics, built from the per-lap, pit and overtake records the race keeps for every car
 
@@ -129,7 +129,7 @@ function buildTraitStats(race, standings) {
             return {
                 id: t.id,
                 name: getTrait(t.id)?.name ?? t.id,
-                lines: fxLines(t.fx),
+                lines: t.lines,
                 pace: tally?.pace ?? 0, // seconds gained (negative: lost) over the race
                 passes: tally?.passes ?? 0, // expected extra passes made
                 defended: tally?.defended ?? 0, // expected passes kept off the car
