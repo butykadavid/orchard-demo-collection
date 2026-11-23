@@ -3,8 +3,9 @@ import { RED_RAIN_RESUME_WET, RED_RAIN_WET, SC_SPEED, VSC_SPEED } from "./consta
 // Race control state: the race is `green`, neutralised by a virtual safety car (`vsc`) or a safety car (`sc`),
 // or stopped by a red flag (`red`).
 //   sc:  lapsLeft = leader laps still to run behind the safety car, ending = it comes in at the end of this lap
-//        collecting = the field is still being collected: everybody runs the same slow speed and the leader slower still,
-//        until he crosses the line `collectLap` (a lap count of the leader's distance)
+//        collecting = the field is still being collected: everybody runs the same slow speed and, once the safety car has
+//        picked him up at the line `pickupLap`, the leader slower still, until he crosses the line `collectLap`
+//        (both are lap counts of the leader's distance)
 //   vsc: until = race clock at which the virtual safety car period ends
 //   red: phase = stopping (cars drive to the pit lane) | waiting (cars parked, tyres can be changed) |
 //        awaiting (everything is ready, the race is frozen until the player restarts it) | cancelled (the conditions
@@ -20,6 +21,7 @@ export function createControl() {
         lapsLeft: 0,
         ending: false,
         collecting: false,
+        pickupLap: 0,
         collectLap: 0,
         quietUntil: 0,
         lap: 0, // laps the leader has completed (to spot the leader crossing the line)

@@ -30,6 +30,9 @@ export default function RaceControlBanner({ race, onRestart }) {
         if (c.ending) {
             title = "Safety car in this lap";
             text = "The safety car comes in at the end of this lap. Racing resumes at the line.";
+        } else if (c.collecting && race.order[0].pos < c.pickupLap) {
+            title = "Safety car";
+            text = "The safety car is out and the field slows down. It picks up the leader at the line. No overtaking. A stop through the pits costs much less.";
         } else if (c.collecting) {
             title = "Safety car";
             text = "The field slows down behind the safety car and the leader slows down further to collect it. No overtaking. A stop through the pits costs much less.";

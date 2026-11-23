@@ -498,10 +498,11 @@ function fieldSpread(race, order) {
     return { front, excess: Math.max(0, front.pos - near[near.length - 1].pos - closed) };
 }
 
-// The safety car is out in front of the leader. The whole field slows down to the same speed, and the leader slows down
-// further, so that the cars behind close up to him by the time he crosses the line `collectLap` (a lap count of his
-// distance, far enough ahead that this takes no more than a halving of the speed). Only then does the safety car period
-// proper begin. The cars can use the pit lane while this is going on, at the reduced field speed.
+// The safety car is out. The whole field slows down to the same speed, but the safety car only picks the leader up at the
+// next start/finish line (`pickupLap`, a lap count of his distance). From there he slows down further, so that the cars behind
+// close up to him by the time he crosses the line `collectLap` (far enough after the pick-up that this takes no more than a
+// halving of the speed). Only then does the safety car period proper begin. The cars can use the pit lane while this is
+// going on, at the reduced field speed.
 function deploySafetyCar(race) {
     const c = race.control;
     const { front, excess } = fieldSpread(race, rank(race.cars));
@@ -510,11 +511,13 @@ function deploySafetyCar(race) {
     race.counts.sc++;
     c.since = race.clock;
     c.ending = false;
-    // the line by which the field is collected: the first one that is far enough away
-    let line = Math.floor(lead) + 1;
-    while (line - lead < (excess * SC_COLLECT_MIN) / (1 - SC_COLLECT_MIN)) line++;
-    line = Math.min(line, Math.max(Math.floor(lead) + 1, race.lapsTotal - 2));
+    // the safety car picks the leader up at the next line, and the field is collected by the first line after that which is far enough away
+    const pickup = Math.floor(lead) + 1;
+    let line = pickup;
+    while (line - pickup < (excess * SC_COLLECT_MIN) / (1 - SC_COLLECT_MIN)) line++;
+    line = Math.min(line, Math.max(pickup, race.lapsTotal - 2));
     c.collecting = true;
+    c.pickupLap = pickup;
     c.collectLap = line;
     c.lapsLeft = Math.max(1, Math.min(race.rng.int(SC_LAPS[0], SC_LAPS[1] + 1) - 1, Math.floor(race.lapsTotal - line) - 2));
     calmField(race);
@@ -750,12 +753,13 @@ export function stepRace(race, dt) {
     const wet = race.wet;
     const t0 = race.clock;
 
-    // While the safety car collects the field its leader drives slower than everybody else, which closes the gaps up
+    // While the safety car collects the field its leader drives slower than everybody else, which closes the gaps up.
+    // That starts when the safety car picks him up at the line, not when it is deployed.
     const collecting = mode === "sc" && race.control.collecting;
     let collectSlow = 1;
     if (collecting) {
         const { front, excess } = fieldSpread(race, order);
-        if (front) {
+        if (front && front.pos >= race.control.pickupLap) {
             const dist = Math.max(0.02, race.control.collectLap - Math.max(front.pos, 0));
             collectSlow = Math.min(1, Math.max(SC_COLLECT_MIN, dist / (dist + excess)));
         }
