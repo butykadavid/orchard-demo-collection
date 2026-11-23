@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { Wrench, X } from "lucide-react";
 import { TYRE_IDS, TYRES } from "../engine/constants.js";
-import { fieldSpeed } from "../engine/control.js";
 import { fmtGap, fmtLap } from "../engine/format.js";
 import { repairTimeFor } from "../engine/incidents.js";
 import { allowedTyres, wearPerLap } from "../engine/pace.js";
-import { pitLoss } from "../engine/pit.js";
+import { pitLossNow, neutralShare } from "../engine/pit.js";
 import { tyreRuleMet } from "../engine/rules.js";
 import { requestPit, setRedFlagTyre } from "../engine/race.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
@@ -47,7 +46,7 @@ function CarPanel({ race, standings, idx }) {
     const damaged = car.damage > 0.05;
     const repair = repairTimeFor(car.damage);
     const red = race.control.mode === "red";
-    const speedF = fieldSpeed(race);
+    const stopCost = pitLossNow(race, neutralShare(race, repair)) + repair;
     const redTyre = car.redTyre ?? car.tyre; // compound of the free set under a red flag
 
     // Direct problems of this car as compact chips (the explanations live in the info panel)
@@ -181,7 +180,7 @@ function CarPanel({ race, standings, idx }) {
                             </>
                         ) : (
                             <>
-                                <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : `Box this lap · ~${Math.round(pitLoss(race.track, speedF) + repair)} s`}
+                                <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : `Box this lap · ~${Math.round(stopCost)} s`}
                             </>
                         )}
                     </button>

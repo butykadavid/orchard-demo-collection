@@ -22,9 +22,8 @@ import {
     TYRE_IDS,
 } from "./constants.js";
 import { cliffPenalty, lapTimeFor, overtakeRate, passFactor, punctureHazard, tyrePace, wearPerLap } from "./pace.js";
-import { fieldSpeed, weatherLapOf } from "./control.js";
 import { repairTimeFor } from "./incidents.js";
-import { pitLoss, queueWait } from "./pit.js";
+import { neutralShare, pitLoss, pitLossNow, queueWait } from "./pit.js";
 import { legalTyres, tyreRuleMet } from "./rules.js";
 import { predictWater } from "./weather.js";
 
@@ -36,12 +35,13 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 // ---------------------------------------------------------------------------------------------
 
 // Expected track wetness for the next `count` laps. The first value is the real current wetness; later values
-// follow the forecast, scaled by how much the bot trusts it (`foresight`).
-function wetProfile(weather, fraction, nowLap, nowWet, count, foresight) {
-    const base = predictWater(weather, fraction, nowLap, nowLap);
+// follow the forecast, scaled by how much the bot trusts it (`foresight`). `nowS` is the race clock; the laps are
+// assumed to take the reference lap time, the weather itself moves with the clock.
+function wetProfile(weather, fraction, nowS, nowWet, count, foresight) {
+    const base = predictWater(weather, fraction, nowS, nowS);
     const out = new Float64Array(count + 1);
     for (let k = 0; k <= count; k++) {
-        out[k] = clamp(nowWet + (predictWater(weather, fraction, nowLap, nowLap + k) - base) * foresight, 0, 100);
+        out[k] = clamp(nowWet + (predictWater(weather, fraction, nowS, nowS + k * weather.lapS) - base) * foresight, 0, 100);
     }
     return out;
 }
@@ -144,7 +144,7 @@ function bestStay(o, tyre, state, damage = 0, held = null, legal = null) {
 // `laps` overrides the number of laps still to run (by default the laps after the one the car is in)
 function outlookFor(car, race, pos, laps = null) {
     const R = laps ?? Math.max(1, race.lapsTotal - Math.floor(pos) - 1);
-    const wet = wetProfile(race.weather, race.fraction, weatherLapOf(race), race.wet, R, car.foresight ?? 1);
+    const wet = wetProfile(race.weather, race.fraction, race.clock, race.wet, R, car.foresight ?? 1);
     return buildOutlook(wet, R, race.lapsTotal / car.setup.wear, race.track);
 }
 
@@ -377,7 +377,11 @@ function respreadPlan(car, laps) {
 // or let the queue clear) by a few laps, if that saves time. Damage counts in all of these comparisons.
 // Under a safety car or virtual safety car the field is slow, so a stop through the pit lane costs much less: bots weigh
 // that cheaper stop against staying out (and paying the full price later), which brings in cars with worn tyres or a stop
-// due soon. Nobody can pass while the race is neutralised, so traffic and undercuts play no part then.
+// due soon. The saving only exists for the part of the stop that is still under the neutralisation: a stop made while the
+// safety car is coming in (or the virtual safety car is about to end) costs nearly the full price, with the rejoin into the
+// released field on top, so bots do not rush into the pits then. Nobody can pass while the race is neutralised, so traffic
+// and undercuts play no part when the whole stop is covered by it. Laps behind a safety car wear the tyres much less than
+// racing laps, so they count for less when a stint is measured against its plan.
 export function decideBotPit(car, race, pos = car.pos) {
     const remaining = race.lapsTotal - Math.floor(pos) - 1;
     if (remaining < 1) return null;
@@ -394,7 +398,7 @@ export function decideBotPit(car, race, pos = car.pos) {
 
     const bias = (car.pitThreshold - 38) * 0.15; // some teams stop a little earlier or later than others
     const repair = repairTimeFor(car.damage);
-    const stintLaps = Math.floor(pos) + 1 - car.stintStart;
+    const stintLaps = Math.floor(pos) + 1 - car.stintStart - Math.round(car.neutralSaved);
     const current = car.plan?.[car.stintIdx];
     const next = car.plan?.[car.stintIdx + 1];
     const plannedStop = current ? current.laps + car.jitter : null;
@@ -405,15 +409,18 @@ export function decideBotPit(car, race, pos = car.pos) {
     const stopNow0 = o.stopCost + repair + first.cost + bias;
 
     // Costs with the traffic around: time lost while stuck, the rejoin position, and the undercut/cover value
-    const speedF = fieldSpeed(race);
-    const neutral = speedF < 1;
-    const nowStop = neutral ? pitLoss(race.track, speedF) : o.stopCost; // what a stop made right now costs
-    const held = neutral ? null : heldLoss(car, race, o);
-    const rivals = racingRivals(race, car);
     const flatTraffic = AI_TRAFFIC_BASE + AI_TRAFFIC_PER_OVTK * race.track.ovtkMultiplier;
     // The crew can only service one car of the team at a time: if a team mate is in the box, stopping now means waiting.
     // That is a tactical cost only (it passes), so it is not part of the plan soundness checks above.
     const wait = queueWait(race, car);
+    // Share of the stop (drive through the lane, service, repair, wait) that is still made under the neutralisation:
+    // the saving of a cheap stop shrinks to nothing as the safety car comes in or the virtual safety car runs out
+    const slowShare = neutralShare(race, repair + wait);
+    const neutral = slowShare >= 1; // the whole stop is covered: the field stays slow, nobody can pass
+    // what a stop made right now costs
+    const nowStop = neutral ? pitLossNow(race, 1) : slowShare > 0 ? pitLossNow(race, slowShare) + flatTraffic : o.stopCost;
+    const held = neutral ? null : heldLoss(car, race, o);
+    const rivals = racingRivals(race, car);
     const stopCostWith = (tyre, futureCost) => {
         const traffic = neutral ? 0 : clamp(rejoinTraffic(car, race, pos, o, tyre, repair, wait, rivals) - flatTraffic, -AI_CLEAN_AIR_BONUS, AI_TRAFFIC_MAX);
         const bonus = neutral ? 0 : positionBonus(car, race, pos, tyre, rivals, stopIn);
