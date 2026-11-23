@@ -66,6 +66,7 @@ export const LAP1_INCIDENT_MULT = 5; // multiplier on collision and driver-error
 export const SC_SPEED = 0.55; // speed behind the safety car as a share of the circuit's reference racing speed (the same for every car)
 export const SC_CATCHUP = 0.9; // cars that are not bunched up yet may run this share of the reference speed (and of their own free speed) to close the gap
 export const SC_GAP_S = 0.5; // s: gap (at the slow speed) the field closes up to behind the car in front under the safety car
+export const SC_COLLECT_MIN = 0.5; // when a safety car comes out the whole field slows to the same speed and the leader slows further, so the field has closed up when he crosses the line; he runs at least this share of that speed (if the field is too spread out for the next line, he takes the one after)
 export const SC_LAPS = [3, 5]; // laps (min, max) the field runs behind the safety car before it comes in
 export const VSC_SPEED = 0.6; // speed under the virtual safety car as a share of the reference racing speed (the same for every car)
 export const NEUTRAL_WOBBLE = 0.01; // largest relative speed variation of a car under a (virtual) safety car
@@ -78,7 +79,7 @@ export const RED_MIN_REMAINING_LAPS = 3; // no red flag when fewer laps than thi
 export const RED_RAIN_WET = 85; // % track wetness from which the race can be stopped for rain
 export const RED_RAIN_RATE = 0.03; // chance per lap that the race is stopped once it is that wet (once per race)
 export const RED_RAIN_RESUME_WET = 65; // % track wetness the race has to drop below before a rain stoppage ends
-export const RED_RAIN_MAX_WAIT_S = 1500; // s: a rain stoppage ends after this long whatever the weather
+export const RED_CANCEL_S = 1800; // s: a red flag that cannot be restarted (the conditions did not allow it) within this long cancels the race; the order at the red flag is the result
 
 // ---- Ratings, car parts and traits ----
 // Drivers and car parts are rated 0-1000. Every point is worth SECONDS_PER_POINT of lap time; RATING_PAR is the rating that costs no time

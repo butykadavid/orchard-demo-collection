@@ -102,6 +102,11 @@ export default function RaceResults({ race, standings, fastest, playerTeam, onBa
                             </tbody>
                         </table>
 
+                        {race.cancelled && (
+                            <p className="mt-2 text-xs text-red-300">
+                                Race cancelled after {race.cancelled.laps} of {race.lapsTotal} laps: the conditions did not improve in time, so the order at the red flag is the result.
+                            </p>
+                        )}
                         {fastest && (
                             <p className="mt-2 text-xs text-fuchsia-400">
                                 Fastest lap: {fastest.name} — {fmtLap(fastest.time)} (lap {fastest.lap})

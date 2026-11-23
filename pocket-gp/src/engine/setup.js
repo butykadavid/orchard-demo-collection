@@ -12,7 +12,7 @@ export const flatCar = (perf = DEFAULT_NEW_CAR_RATING, rel = DEFAULT_RELIABILITY
 export function expectedWetness(weather, fraction, lapsTotal) {
     const n = Math.max(1, Math.min(lapsTotal, 24));
     let sum = 0;
-    for (let k = 0; k < n; k++) sum += predictWater(weather, fraction, 0, ((k + 0.5) * lapsTotal) / n);
+    for (let k = 0; k < n; k++) sum += predictWater(weather, fraction, 0, (((k + 0.5) * lapsTotal) / n) * weather.lapS);
     return sum / n;
 }
 

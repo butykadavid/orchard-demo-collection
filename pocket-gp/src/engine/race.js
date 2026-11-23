@@ -25,14 +25,14 @@ import {
     PIT_TEAM_BUFFER,
     PUNCTURE_SPEED,
     RECOVER_SPEED,
+    RED_CANCEL_S,
     RED_MIN_REMAINING_LAPS,
-    RED_RAIN_MAX_WAIT_S,
     RED_RAIN_RATE,
-    RED_RAIN_RESUME_WET,
     RED_RAIN_WET,
     RED_WAIT_S,
     RED_WARP,
     SC_CATCHUP,
+    SC_COLLECT_MIN,
     SC_GAP_S,
     SC_LAPS,
     SC_SPEED,
@@ -45,7 +45,7 @@ import {
     VSC_SPEED,
 } from "./constants.js";
 import { choosePlan, decideBotPit, emergencyTyre, planRestart, tyreName } from "./ai.js";
-import { createControl, rollRaceControl, weatherLapOf } from "./control.js";
+import { createControl, redRestartWet, rollRaceControl } from "./control.js";
 import { addDamage, damageLabel, repairTimeFor, rollIncident } from "./incidents.js";
 import { attackBonus, lapNoise, lapTimeFor, lapsTotalFor, overtakeEase, overtakeRate, passFactor, punctureHazard, tyreLoss, wearPerLap } from "./pace.js";
 import { PARTS, errorFactor } from "./parts.js";
@@ -80,6 +80,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         pace: track.optLapTime,
         noise: lapNoise(rng),
         crawlWobble: 0, // relative speed variation under a (virtual) safety car, so the field does not move like one block
+        neutralSaved: 0, // racing laps' worth of tyre wear saved by running slowly under a neutralisation in the current stint
         tyre: g.tyre,
         tyreState: 100,
         allTyres: g.tyre,
@@ -91,6 +92,8 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         parked: false, // standing in the pit lane under a red flag
         redRank: 0, // position when the red flag came out (the restart grid order)
         redLapsDown: 0, // laps behind the leader when the red flag came out
+        redGap: 0, // gap to the leader (s) when the red flag came out (shown when the race is cancelled)
+        redGapAhead: 0, // gap to the car ahead (s) when the red flag came out
         redTyre: null, // player: compound chosen for the free tyre change under the red flag (null keeps the current set)
         regrid: false, // lined up for a standing restart: the next line crossing is not a lap
         chaosEnd: 0, // distance (laps) up to which the car is in the chaotic first lap after a standing restart
@@ -148,6 +151,7 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         wet: waterAt(weather, 0, fraction),
         rain: rainAt(weather, 0, fraction),
         finished: false,
+        cancelled: null, // the race was called off under a red flag: { laps } = laps the leader had completed, the red flag order is the result
         events: [],
         eventSeq: 0,
         traitLog: [], // moments in which a trait visibly changed the race: { t, lap, code, good, text }
@@ -156,7 +160,6 @@ export function createRace({ grid, track, weather, fraction, playerTeam, rng }) 
         teamBusyUntil: new Map(), // team -> race clock until which its pit crew is busy (one car is serviced at a time)
         control: createControl(), // safety car, virtual safety car and red flag state
         counts: { sc: 0, vsc: 0, red: 0 }, // how often each neutralisation was called
-        weatherShift: 0, // laps the weather has moved on while the race stood still under a red flag
     };
 }
 
@@ -298,12 +301,13 @@ export function getStandings(race) {
         const ahead = i > 0 ? order[i - 1] : null;
         if (redFlag && !car.finished && !car.dnf) {
             // The race is stopped: no gaps, only the laps each car was behind when the flag came out
+            // (a cancelled race keeps the gaps it had at that moment as its final result)
             const aheadRunning = ahead && !ahead.finished && !ahead.dnf;
             return {
                 car,
                 position: i + 1,
-                gapLeader: null,
-                gapAhead: null,
+                gapLeader: race.cancelled ? car.redGap : null,
+                gapAhead: race.cancelled ? car.redGapAhead : null,
                 lapsBehindLeader: car.redLapsDown,
                 lapsBehindAhead: aheadRunning ? car.redLapsDown - ahead.redLapsDown : 0,
             };
@@ -364,6 +368,7 @@ function startPit(race, car, tyre) {
     car.recover = 0;
     if (car.plan) car.stintIdx += 1;
     car.stintStart = Math.floor(car.pos) + 1;
+    car.neutralSaved = 0;
     car.trafficLoss = 0;
     car.lossAcc = 0;
     car.jitter = race.rng.int(-1, 2);
@@ -453,14 +458,36 @@ function calmField(race) {
     }
 }
 
+// How far the field behind the front car (the leader) is from being bunched up at safety car speed: the distance (laps)
+// by which the running cars within a lap of the front car are spread out more than the safety car gap allows
+function fieldSpread(race, order) {
+    const field = order.filter((x) => !x.finished && !x.dnf && !x.parked && !x.pit);
+    const front = field[0];
+    if (!front) return { front: null, excess: 0 };
+    const near = field.filter((x) => front.pos - x.pos < 1);
+    const closed = (near.length - 1) * SC_GAP_S * (SC_SPEED / race.track.optLapTime);
+    return { front, excess: Math.max(0, front.pos - near[near.length - 1].pos - closed) };
+}
+
+// The safety car is out in front of the leader. The whole field slows down to the same speed, and the leader slows down
+// further, so that the cars behind close up to him by the time he crosses the line `collectLap` (a lap count of his
+// distance, far enough ahead that this takes no more than a halving of the speed). Only then does the safety car period
+// proper begin. The cars can use the pit lane while this is going on, at the reduced field speed.
 function deploySafetyCar(race) {
     const c = race.control;
-    const lead = Math.max(race.order[0].pos, 0);
+    const { front, excess } = fieldSpread(race, rank(race.cars));
+    const lead = Math.max(front ? front.pos : race.order[0].pos, 0);
     c.mode = "sc";
     race.counts.sc++;
     c.since = race.clock;
     c.ending = false;
-    c.lapsLeft = Math.max(1, Math.min(race.rng.int(SC_LAPS[0], SC_LAPS[1] + 1) - 1, Math.floor(race.lapsTotal - lead) - 2));
+    // the line by which the field is collected: the first one that is far enough away
+    let line = Math.floor(lead) + 1;
+    while (line - lead < (excess * SC_COLLECT_MIN) / (1 - SC_COLLECT_MIN)) line++;
+    line = Math.min(line, Math.max(Math.floor(lead) + 1, race.lapsTotal - 2));
+    c.collecting = true;
+    c.collectLap = line;
+    c.lapsLeft = Math.max(1, Math.min(race.rng.int(SC_LAPS[0], SC_LAPS[1] + 1) - 1, Math.floor(race.lapsTotal - line) - 2));
     calmField(race);
     pushEvent(race, "control", "Safety car deployed");
 }
@@ -481,7 +508,13 @@ function endNeutral(race) {
     const c = race.control;
     c.mode = "green";
     c.ending = false;
+    c.collecting = false;
     c.quietUntil = Math.max(race.order[0].pos, 0) + NEUTRAL_COOLDOWN_LAPS;
+    // time lost behind the slow field says nothing about the race that begins now
+    for (const car of race.cars) {
+        car.trafficLoss = 0;
+        car.lossAcc = 0;
+    }
     pushEvent(race, "control", "Green flag: racing resumes");
 }
 
@@ -490,10 +523,14 @@ function startRedFlag(race, rain) {
     const order = rank(race.cars);
     const leaderPos = order[0].pos;
     let n = 0;
+    let before = null;
     for (const car of order) {
         if (car.finished || car.dnf) continue;
         car.redRank = ++n;
         car.redLapsDown = Math.max(0, Math.floor(leaderPos - car.pos));
+        car.redGap = gapSeconds(race, car, order[0]);
+        car.redGapAhead = before ? gapSeconds(race, car, before) : 0;
+        before = car;
         car.pitRequest = null;
     }
     calmField(race);
@@ -502,6 +539,7 @@ function startRedFlag(race, rain) {
     c.phase = "stopping";
     c.since = race.clock;
     c.ending = false;
+    c.collecting = false;
     c.rain = rain;
     if (rain) c.rainUsed = true;
     pushEvent(race, "red", rain ? "Red flag: the race is stopped because of the rain" : "Red flag: the race is stopped");
@@ -519,7 +557,7 @@ function parkCar(car) {
 const playerRacing = (race) => race.cars.some((c) => c.isPlayer && !c.dnf && !c.finished);
 
 // Called at the end of every step: ends neutralisations, moves a red flag through its phases, and may stop the race for rain
-function updateRaceControl(race, dt) {
+function updateRaceControl(race) {
     const c = race.control;
     const lead = race.order[0];
     const leadLap = Math.max(0, Math.floor(lead.pos));
@@ -530,7 +568,12 @@ function updateRaceControl(race, dt) {
         if (race.clock >= c.until) endNeutral(race);
     } else if (c.mode === "sc") {
         if (crossedLine) {
-            if (c.ending) endNeutral(race);
+            if (c.collecting) {
+                if (leadLap >= c.collectLap) {
+                    c.collecting = false;
+                    pushEvent(race, "control", "The field is closed up behind the safety car");
+                }
+            } else if (c.ending) endNeutral(race);
             else if (--c.lapsLeft <= 0) {
                 c.ending = true;
                 pushEvent(race, "control", "Safety car in this lap");
@@ -548,16 +591,26 @@ function updateRaceControl(race, dt) {
             pushEvent(race, "red", "All cars are in the pit lane: tyres can be changed");
         }
     } else if (c.phase === "waiting") {
-        race.weatherShift += dt / race.track.optLapTime; // the weather keeps moving while the race stands still
+        // The weather keeps moving with the clock while the race stands still. The race restarts once the cars have had their
+        // time in the pits and the track is in a state to race on; if that does not happen in time it is called off.
         const elapsed = race.clock - c.waitStart;
-        const dry = !c.rain || race.wet < RED_RAIN_RESUME_WET || elapsed >= RED_RAIN_MAX_WAIT_S;
-        if (elapsed >= c.waitS && dry) {
+        if (elapsed >= c.waitS && race.wet < redRestartWet(c)) {
             if (playerRacing(race)) {
                 c.phase = "awaiting";
                 pushEvent(race, "red", "The race can be restarted");
             } else restartRace(race);
-        }
+        } else if (race.clock - c.since >= RED_CANCEL_S) cancelRace(race);
     }
+}
+
+// The race cannot be restarted in time: it is over and the order when the red flag came out is the result
+function cancelRace(race) {
+    const c = race.control;
+    c.phase = "cancelled";
+    race.order = rank(race.cars, true);
+    race.cancelled = { laps: Math.max(1, Math.floor(Math.max(race.order[0].pos, 0))) };
+    race.finished = true;
+    pushEvent(race, "red", "The race is cancelled: the conditions did not improve in time. The order at the red flag is the final result");
 }
 
 // Player: choose the compound of the free tyre change under the red flag
@@ -577,12 +630,10 @@ export function restartRace(race) {
     if (running.length === 0) return false;
 
     const lead = running[0];
-    const oldLeadPos = Math.max(lead.pos, 0);
     const k = Math.max(0, Math.floor(lead.pos));
     const gap = START_GAP_S / race.track.optLapTime;
 
     // Everybody gets a new set. Bots pick the cheapest tyre for the weather expected at the restart and plan the rest of the race on it.
-    // (all decisions first: the weather lookup depends on where the leader is)
     const fitted = running.map((car) => {
         const lineLap = Math.max(0, k - car.redLapsDown);
         if (car.isPlayer) return { car, lineLap, tyre: car.redTyre ?? car.tyre, plan: null };
@@ -619,6 +670,7 @@ export function restartRace(race) {
         car.chaseTarget = null;
         car.trafficLoss = 0;
         car.lossAcc = 0;
+        car.neutralSaved = 0;
         car.speed = 0;
         car.pos = lineLap - j * gap;
         car.prevPos = car.pos;
@@ -629,7 +681,6 @@ export function restartRace(race) {
         car.sectorTimes.fill(-1);
     });
 
-    race.weatherShift += oldLeadPos - Math.max(lead.pos, 0);
     c.mode = "green";
     c.phase = null;
     c.lap = Math.max(c.lap, Math.floor(lead.pos));
@@ -664,11 +715,22 @@ export function stepRace(race, dt) {
     const order = rank(race.cars, mode === "red");
     race.order = order;
 
-    const weatherLap = weatherLapOf(race);
-    race.wet = waterAt(race.weather, weatherLap, fraction);
-    race.rain = rainAt(race.weather, weatherLap, fraction);
+    // The weather runs on the race clock, so time spent under a red flag counts too
+    race.wet = waterAt(race.weather, race.clock, fraction);
+    race.rain = rainAt(race.weather, race.clock, fraction);
     const wet = race.wet;
     const t0 = race.clock;
+
+    // While the safety car collects the field its leader drives slower than everybody else, which closes the gaps up
+    const collecting = mode === "sc" && race.control.collecting;
+    let collectSlow = 1;
+    if (collecting) {
+        const { front, excess } = fieldSpread(race, order);
+        if (front) {
+            const dist = Math.max(0.02, race.control.collectLap - Math.max(front.pos, 0));
+            collectSlow = Math.min(1, Math.max(SC_COLLECT_MIN, dist / (dist + excess)));
+        }
+    }
 
     let blocker = null; // nearest car ahead that is actually racing (not finished, not in the pits)
 
@@ -738,6 +800,7 @@ export function stepRace(race, dt) {
             car.crawlWobble = Math.max(-NEUTRAL_WOBBLE, Math.min(NEUTRAL_WOBBLE, car.crawlWobble * 0.98 + rng.range(-0.2, 0.2) * NEUTRAL_WOBBLE));
             const base = crawl * (1 + car.crawlWobble);
             if (mode === "vsc") speed = Math.min(free, base);
+            else if (collecting) speed = Math.min(free, base * (ahead ? 1 : collectSlow)); // everybody the same, the leader slower
             else speed = bunched() ? Math.min(free, base) : Math.min(free * SC_CATCHUP, (base * SC_CATCHUP) / SC_SPEED);
         }
 
@@ -768,7 +831,7 @@ export function stepRace(race, dt) {
         car.following = following;
         if (!following) car.chaseTarget = null;
         // Time lost this step because the car ahead holds it up (bots use this to judge whether they are stuck)
-        if (following && !car.pit && oldPos >= 0) car.lossAcc += dt * Math.max(0, 1 - speed * car.pace);
+        if (following && !car.pit && oldPos >= 0 && !neutral) car.lossAcc += dt * Math.max(0, 1 - speed * car.pace);
 
         // Random incidents: puncture on worn tyres, mechanical failure, driver error
         if (oldPos >= 0 && !car.pit) {
@@ -804,7 +867,10 @@ export function stepRace(race, dt) {
             }
         }
 
-        if (!car.pit) car.tyreState -= wearPerLap(car.tyre, lapsTotal, car.setup.wear) * speed * dt * (neutral ? NEUTRAL_WEAR : 1);
+        if (!car.pit) {
+            car.tyreState -= wearPerLap(car.tyre, lapsTotal, car.setup.wear) * speed * dt * (neutral ? NEUTRAL_WEAR : 1);
+            if (neutral) car.neutralSaved += speed * dt * (1 - NEUTRAL_WEAR); // laps of wear not suffered, for the stint count of the bots
+        }
 
         let newPos = oldPos + speed * dt;
 
@@ -936,7 +1002,7 @@ export function stepRace(race, dt) {
     }
 
     race.clock = t0 + dt;
-    updateRaceControl(race, dt);
+    updateRaceControl(race);
     if (race.cars.every((c) => c.finished || c.dnf)) {
         race.finished = true;
         race.order = rank(race.cars);

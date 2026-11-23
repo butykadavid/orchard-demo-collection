@@ -28,7 +28,7 @@ function buildStints(car, lapsTotal) {
 }
 
 export function buildRaceStats(race, standings) {
-    const lapsTotal = race.lapsTotal;
+    const lapsTotal = race.cancelled ? race.cancelled.laps : race.lapsTotal; // a cancelled race counts the laps run
     const traits = buildTraitStats(race, standings);
 
     const rows = standings.map((s) => {

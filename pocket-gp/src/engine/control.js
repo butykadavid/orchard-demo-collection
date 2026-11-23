@@ -1,12 +1,15 @@
-import { SC_SPEED, VSC_SPEED } from "./constants.js";
+import { RED_RAIN_RESUME_WET, RED_RAIN_WET, SC_SPEED, VSC_SPEED } from "./constants.js";
 
 // Race control state: the race is `green`, neutralised by a virtual safety car (`vsc`) or a safety car (`sc`),
 // or stopped by a red flag (`red`).
 //   sc:  lapsLeft = leader laps still to run behind the safety car, ending = it comes in at the end of this lap
+//        collecting = the field is still being collected: everybody runs the same slow speed and the leader slower still,
+//        until he crosses the line `collectLap` (a lap count of the leader's distance)
 //   vsc: until = race clock at which the virtual safety car period ends
 //   red: phase = stopping (cars drive to the pit lane) | waiting (cars parked, tyres can be changed) |
-//        awaiting (everything is ready, the race is frozen until the player restarts it)
-//        gridLap = laps the leader had completed when the flag came out, rain = stopped because of the weather
+//        awaiting (everything is ready, the race is frozen until the player restarts it) | cancelled (the conditions
+//        did not allow a restart in time: the race is over)
+//        since = race clock at which the flag came out, rain = stopped because of the weather
 //   quietUntil = leader distance (laps) before which no new neutralisation is called
 export function createControl() {
     return {
@@ -16,9 +19,10 @@ export function createControl() {
         until: 0,
         lapsLeft: 0,
         ending: false,
+        collecting: false,
+        collectLap: 0,
         quietUntil: 0,
         lap: 0, // laps the leader has completed (to spot the leader crossing the line)
-        gridLap: 0,
         waitStart: 0,
         waitS: 0,
         rain: false,
@@ -60,5 +64,18 @@ export function fieldSpeed(race) {
     return 1;
 }
 
-// Position on the weather timeline in laps: the leader's distance plus the time the race stood still under a red flag
-export const weatherLapOf = (race) => Math.max(race.order[0].pos, 0) + race.weatherShift;
+// Seconds the current neutralisation can still be counted on to last, as far as a team can tell: the virtual safety car
+// has a timer, a safety car announces that it comes in at the end of the lap (then it is over when the leader crosses the line);
+// before that announcement it lasts for at least another lap or so, which is longer than any pit stop (Infinity).
+export function neutralLeft(race) {
+    const c = race.control;
+    if (c.mode === "vsc") return Math.max(0, c.until - race.clock);
+    if (c.mode !== "sc") return 0;
+    if (!c.ending) return Infinity;
+    const lead = Math.max(race.order[0].pos, 0);
+    return ((Math.ceil(lead) - lead) * race.track.optLapTime) / SC_SPEED;
+}
+
+// Track wetness (%) the race has to be below before a red flag can be restarted: a stoppage for rain needs the rain to ease clearly,
+// any other red flag only needs conditions in which the race would not be stopped for rain
+export const redRestartWet = (control) => (control.rain ? RED_RAIN_RESUME_WET : RED_RAIN_WET);

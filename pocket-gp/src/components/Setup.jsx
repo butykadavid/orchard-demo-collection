@@ -74,8 +74,8 @@ export default function Setup({ initial, onRunQualifying }) {
     const weather = useMemo(() => createWeather(createRng(seed ^ (track.id * 7919)), track), [seed, track]);
     const startWet = waterAt(weather, 0, fraction);
     const startRain = rainAt(weather, 0, fraction);
-    const fc = forecast(weather, fraction, 0, lapsTotal, 10);
-    const recommended = allowedTyres(waterAt(weather, 2, fraction));
+    const fc = forecast(weather, fraction, 0, 0, lapsTotal, 10);
+    const recommended = allowedTyres(waterAt(weather, 2 * track.optLapTime, fraction));
 
     const randomTrack = () => {
         const t = TRACKS[Math.floor(Math.random() * TRACKS.length)];

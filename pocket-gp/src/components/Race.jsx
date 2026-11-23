@@ -77,7 +77,7 @@ export default function Race({ race, onExit }) {
     });
     const leader = standings[0].car;
     const lap = Math.min(race.lapsTotal, Math.max(0, Math.floor(leader.pos)) + 1);
-    const fc = forecast(race.weather, race.fraction, Math.max(0, leader.pos), race.lapsTotal, 10, race.weatherShift);
+    const fc = forecast(race.weather, race.fraction, race.clock, Math.max(0, leader.pos), race.lapsTotal, 10);
     const players = race.cars.filter((c) => c.isPlayer);
     const playerDone = players.length > 0 && players.every((c) => c.finished || c.dnf) && !race.finished;
 

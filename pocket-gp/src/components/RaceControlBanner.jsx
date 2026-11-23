@@ -1,4 +1,6 @@
 import { Flag, Play, ShieldAlert } from "lucide-react";
+import { RED_CANCEL_S } from "../engine/constants.js";
+import { redRestartWet } from "../engine/control.js";
 import { fmtClock } from "../engine/format.js";
 
 const VSC_ENDING_S = 10; // race seconds before the end of a virtual safety car in which "ending" is shown
@@ -28,16 +30,26 @@ export default function RaceControlBanner({ race, onRestart }) {
         if (c.ending) {
             title = "Safety car in this lap";
             text = "The safety car comes in at the end of this lap. Racing resumes at the line.";
+        } else if (c.collecting) {
+            title = "Safety car";
+            text = "The field slows down behind the safety car and the leader slows down further to collect it. No overtaking. A stop through the pits costs much less.";
         } else {
             title = "Safety car";
-            text = "The field closes up behind the safety car. No overtaking. A stop through the pits costs much less.";
+            text = "The field is closed up behind the safety car. No overtaking. A stop through the pits costs much less.";
         }
     } else {
         title = "Red flag";
         if (c.phase === "stopping") text = "The race is stopped. The cars are driving to the pit lane.";
-        else if (c.phase === "waiting") {
+        else if (c.phase === "cancelled") {
+            title = "Race cancelled";
+            text = "The conditions did not improve in time. The order at the red flag is the final result.";
+        } else if (c.phase === "waiting") {
             const left = Math.max(0, c.waitS - (race.clock - c.waitStart));
-            text = c.rain && left <= 0 ? "Waiting for the rain to ease." : `Cars in the pit lane, free tyre change for everybody. Restart in about ${fmtClock(left)}.`;
+            if (race.wet >= redRestartWet(c)) {
+                text = `Waiting for the track to be fit for racing. The race is cancelled if it cannot restart within ${fmtClock(Math.max(0, RED_CANCEL_S - (race.clock - c.since)))}.`;
+            } else {
+                text = `Cars in the pit lane, free tyre change for everybody. Restart in about ${fmtClock(left)}.`;
+            }
         } else text = "Everything is ready. Standing start: the lap counter carries on, everybody has fresh tyres.";
     }
 
