@@ -5,73 +5,12 @@ import { buildTrackShape } from "../engine/trackShape.js";
 import { RATING_MAX, TRAIT_SLOTS, PART_PERF_TIERS } from "../engine/constants.js";
 import { PARTS, PART_IDS, carRating, failureOdds } from "../engine/parts.js";
 import { TyreBadge } from "./Tyre.jsx";
+import { ColorInput, Hint, IconButton, NumInput, CommitInput, inputClass } from "./CustomizeControls.jsx";
+import TraitsEditor from "./TraitsEditor.jsx";
 
 const MIN_DRIVERS = 2;
 const MAX_DRIVERS = 26;
 const CODE_PATTERN = /^[A-Z0-9]{2,4}$/;
-
-const inputClass = "w-full rounded-md border bg-zinc-900 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red-500";
-
-// Text input that edits freely but only commits values `parse` accepts (it returns undefined for invalid text)
-function CommitInput({ value, parse, onCommit, className = "", ...rest }) {
-    const [text, setText] = useState(null); // null while the field is not being edited
-    const invalid = text !== null && parse(text) === undefined;
-    return (
-        <input
-            {...rest}
-            value={text ?? String(value)}
-            onFocus={() => setText(String(value))}
-            onChange={(e) => {
-                setText(e.target.value);
-                const parsed = parse(e.target.value);
-                if (parsed !== undefined) onCommit(parsed);
-            }}
-            onBlur={() => setText(null)}
-            className={`${inputClass} ${invalid ? "border-red-500" : "border-zinc-700"} ${className}`}
-        />
-    );
-}
-
-function NumInput({ value, onChange, min, max, integer = false, className = "" }) {
-    const parse = (text) => {
-        if (text.trim() === "") return undefined;
-        // Mobile decimal keypads in many locales only offer a comma
-        const n = Number(text.trim().replace(",", "."));
-        if (!Number.isFinite(n) || n < min || n > max || (integer && !Number.isInteger(n))) return undefined;
-        return n;
-    };
-    return <CommitInput value={value} parse={parse} onCommit={onChange} inputMode="decimal" title={`${min} to ${max}`} className={`text-right font-mono ${className}`} />;
-}
-
-function ColorInput({ value, onChange, title }) {
-    return (
-        <input
-            type="color"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            title={title}
-            className="h-7 w-full cursor-pointer rounded-md border border-zinc-700 bg-zinc-900 p-0.5"
-        />
-    );
-}
-
-function IconButton({ onClick, disabled, title, children }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={disabled}
-            title={title}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
-        >
-            {children}
-        </button>
-    );
-}
-
-function Hint({ children }) {
-    return <p className="mb-3 text-xs text-zinc-500">{children}</p>;
-}
 
 // ---------------------------------------------------------------------------------------------
 // Grid
@@ -180,7 +119,7 @@ function CarsEditor({ drivers, cars, onChange }) {
         <>
             <Hint>
                 Every team has one car of six parts, each with a performance and a reliability rating (0-{RATING_MAX}). Performance is worth 0.01 s per lap per point, weighted by what
-                the circuit asks of each part (800 is the reference), and unlocks the part's traits at {PART_PERF_TIERS.join(", ")}. Reliability sets how likely the part is to
+                the circuit asks of each part (800 is the reference), and unlocks the part's traits at {PART_PERF_TIERS.join(", ")} (the traits are edited on the Traits tab). Reliability sets how likely the part is to
                 break down: the risk grows quickly as it drops. A team runs up to {TRAIT_SLOTS} traits per race, one per part. Teams are created and renamed on the Grid tab.
             </Hint>
             <div className="space-y-2">
@@ -375,6 +314,7 @@ const TABS = [
     { id: "cars", label: "Cars" },
     { id: "tracks", label: "Circuits" },
     { id: "tyres", label: "Tyres" },
+    { id: "traits", label: "Traits" },
 ];
 
 export default function Customize() {
@@ -465,6 +405,7 @@ export default function Customize() {
                 {tab === "cars" && <CarsEditor drivers={data.drivers} cars={data.cars} onChange={(cars) => update({ cars })} />}
                 {tab === "tracks" && <TracksEditor tracks={data.tracks} onChange={(tracks) => update({ tracks })} />}
                 {tab === "tyres" && <TyresEditor tyres={data.tyres} onChange={(tyres) => update({ tyres })} />}
+                {tab === "traits" && <TraitsEditor traits={data.traits} onChange={(traits) => update({ traits })} />}
             </section>
         </div>
     );
