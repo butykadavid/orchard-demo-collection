@@ -1,4 +1,5 @@
 import { fmtGap } from "../engine/format.js";
+import { pendingDriveThrough, pendingTime } from "../engine/penalties.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
 
 export default function TimingTower({ standings, fastestCode }) {
@@ -19,6 +20,8 @@ export default function TimingTower({ standings, fastestCode }) {
                     const out = Boolean(car.dnf) || dsq;
                     const interval = dsq ? "DSQ" : out ? "DNF" : s.position === 1 ? "LEADER" : fmtGap(s.gapAhead, s.lapsBehindAhead);
                     const gap = out || s.position === 1 ? "" : fmtGap(s.gapLeader, s.lapsBehindLeader);
+                    const owedDt = out || car.finished ? null : pendingDriveThrough(car);
+                    const owedTime = out || car.finished ? 0 : pendingTime(car);
                     return (
                         <li
                             key={car.code}
@@ -40,6 +43,17 @@ export default function TimingTower({ standings, fastestCode }) {
                             <span className="text-right font-mono text-zinc-400">
                                 {dsq ? "DSQ" : car.finished ? "FIN" : out ? "OUT" : car.pit || car.parked ? <span className="text-amber-400">PIT</span> : car.punctured ? <span className="text-red-400">PNC</span> : (
                                     <>
+                                        {owedDt ? (
+                                            <span className="mr-1 text-red-400" title="Drive-through penalty to serve">
+                                                DT
+                                            </span>
+                                        ) : (
+                                            owedTime > 0 && (
+                                                <span className="mr-1 text-yellow-300" title={`Time penalty of ${owedTime} s to serve at the next stop`}>
+                                                    +{owedTime}
+                                                </span>
+                                            )
+                                        )}
                                         {car.damage > 0.05 && (
                                             <span className="mr-1 text-orange-400" title={`Damage: +${car.damage.toFixed(1)} s/lap`}>
                                                 DMG

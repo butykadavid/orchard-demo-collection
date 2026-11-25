@@ -1,4 +1,5 @@
 import { fmtGap } from "../engine/format.js";
+import { pendingDriveThrough } from "../engine/penalties.js";
 import { TyreBadge } from "./Tyre.jsx";
 
 // Phone-only summary of the player's cars shown under the track map; tapping a card opens the full car panel
@@ -19,11 +20,15 @@ export default function MobileCarStrip({ standings, onOpen }) {
                             ? "Finished"
                             : car.pit || car.parked
                                 ? "In pit lane"
-                                : car.pitRequest !== null
-                                    ? "BOX this lap"
-                                    : s.position > 1
-                                        ? fmtGap(s.gapAhead, s.lapsBehindAhead)
-                                        : "Leader";
+                                : pendingDriveThrough(car)
+                                    ? car.pitRequest !== null
+                                        ? "Serving DT this lap"
+                                        : "Serve DT penalty"
+                                    : car.pitRequest !== null
+                                        ? "BOX this lap"
+                                        : s.position > 1
+                                            ? fmtGap(s.gapAhead, s.lapsBehindAhead)
+                                            : "Leader";
                 return (
                     <button
                         key={car.code}

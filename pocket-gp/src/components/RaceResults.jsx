@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { fmtGap, fmtLap } from "../engine/format.js";
+import { penaltyText } from "../engine/penalties.js";
 import { buildRaceStats } from "../engine/stats.js";
 import { racePoints, weekendTable } from "../engine/weekend.js";
 import { TyreBadge } from "./Tyre.jsx";
@@ -129,6 +130,15 @@ export default function RaceResults({ race, standings, fastest, playerTeam, onBa
                                             <span className="mr-2 inline-block h-3 w-1 rounded-sm align-middle" style={{ backgroundColor: s.car.color }} />
                                             <span className="font-semibold">{s.car.code}</span>{" "}
                                             <span className="text-zinc-400">{s.car.name}</span>
+                                            {s.car.penalties.map((p, i) => (
+                                                <span
+                                                    key={i}
+                                                    className={`ml-1 rounded px-1 font-mono text-[10px] ${p.outcome === "dsq" ? "bg-red-500/20 text-red-300" : "bg-yellow-500/15 text-yellow-300"}`}
+                                                    title={`Lap ${p.lap}: ${penaltyText(p)} for ${p.reason}${p.outcome ? ` (${p.outcome})` : ""}`}
+                                                >
+                                                    {p.dt ? "DT" : `+${p.seconds}s`}
+                                                </span>
+                                            ))}
                                         </td>
                                         <td className="py-0.5 text-right font-mono">
                                             {s.car.dsq ? (

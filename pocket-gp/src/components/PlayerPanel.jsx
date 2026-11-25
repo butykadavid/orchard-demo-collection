@@ -5,7 +5,8 @@ import { fmtGap, fmtLap } from "../engine/format.js";
 import { repairTimeFor } from "../engine/incidents.js";
 import { allowedTyres, wearPerLap } from "../engine/pace.js";
 import { pitLossNow, neutralShare } from "../engine/pit.js";
-import { tyreRuleMet } from "../engine/rules.js";
+import { pendingDriveThrough, pendingTime } from "../engine/penalties.js";
+import { tyreRuleMet, tyreRuleReason } from "../engine/rules.js";
 import { requestPit, setRedFlagTyre } from "../engine/race.js";
 import { TyreBadge, WearBar } from "./Tyre.jsx";
 
@@ -45,8 +46,10 @@ function CarPanel({ race, standings, idx }) {
     const pending = car.pitRequest !== null;
     const damaged = car.damage > 0.05;
     const repair = repairTimeFor(car.damage);
+    const owedDt = pendingDriveThrough(car); // a drive-through has to be served before any stop
+    const owedTime = pendingTime(car); // seconds of time penalty to be served at the next stop
     const red = race.control.mode === "red";
-    const stopCost = pitLossNow(race, neutralShare(race, repair)) + repair;
+    const stopCost = pitLossNow(race, neutralShare(race, repair)) + repair + owedTime;
     const redTyre = car.redTyre ?? car.tyre; // compound of the free set under a red flag
 
     // Direct problems of this car as compact chips (the explanations live in the info panel)
@@ -54,6 +57,8 @@ function CarPanel({ race, standings, idx }) {
     if (car.punctured) flags.push(["punct", "Puncture", "bg-red-500/20 text-red-300"]);
     else if (car.tyreState < 20 && !car.pit) flags.push(["cliff", "Worn tyres", "bg-amber-500/20 text-amber-300"]);
     if (damaged) flags.push(["dmg", `Damage +${car.damage.toFixed(1)} s/lap`, "bg-orange-500/20 text-orange-300"]);
+    if (owedDt) flags.push(["dt", `Drive-through: serve within ${owedDt.left} ${owedDt.left === 1 ? "lap" : "laps"} or DSQ`, "bg-red-500/20 text-red-300"]);
+    if (owedTime > 0) flags.push(["pen", `Penalty +${owedTime} s at the next stop`, "bg-amber-500/20 text-amber-300"]);
     if (car.recover > 0 && !car.pit && car.pos >= 0) flags.push(["rec", "Recovering", "bg-amber-500/20 text-amber-300"]);
     if (!tyreRuleMet(car.allTyres) && !car.finished) {
         flags.push(["rule", onFinalLap ? "Tyre rule: DSQ" : "Tyre rule", onFinalLap ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"]);
@@ -63,7 +68,7 @@ function CarPanel({ race, standings, idx }) {
             <div className="rounded-lg border border-red-900 bg-red-950/40 p-3">
                 <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-red-400">{car.team} — {car.code} disqualified</h3>
                 <p className="text-sm">
-                    {car.code} is disqualified: {car.dsq.reason}. Every car has to use at least two different compounds.
+                    {car.code} is disqualified: {car.dsq.reason}.{car.dsq.reason === tyreRuleReason ? " Every car has to use at least two different compounds." : ""}
                 </p>
             </div>
         );
@@ -148,7 +153,7 @@ function CarPanel({ race, standings, idx }) {
                 </>
             ) : (
                 <>
-                    <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Next set</div>
+                    <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">{owedDt ? "Next set (after the drive-through)" : "Next set"}</div>
                     <div className="mb-1.5 grid grid-cols-[repeat(auto-fit,minmax(3.5rem,1fr))] gap-1">
                         {TYRE_IDS.map((id) => (
                             <button
@@ -176,11 +181,12 @@ function CarPanel({ race, standings, idx }) {
                     >
                         {pending ? (
                             <>
-                                <X size={14} /> BOX THIS LAP — cancel
+                                <X size={14} /> {owedDt ? "SERVE DT THIS LAP" : "BOX THIS LAP"} — cancel
                             </>
                         ) : (
                             <>
-                                <Wrench size={14} /> {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : `Box this lap · ~${Math.round(stopCost)} s`}
+                                <Wrench size={14} />{" "}
+                                {car.pit ? "In pit lane" : onFinalLap ? "Final lap" : owedDt ? "Serve DT penalty" : `Box this lap · ~${Math.round(stopCost)} s`}
                             </>
                         )}
                     </button>

@@ -315,7 +315,7 @@ export function TraitsPanel({ stats }) {
                             <th className="py-1.5 text-right" title="Expected passes kept off the car (negative: extra passes conceded)">
                                 Defence
                             </th>
-                            <th className="py-1.5 text-right" title="Extra chance of a driver error or breakdown caused by the trait">
+                            <th className="py-1.5 text-right" title="Extra chance of a driver error, a breakdown or a failed scrutineering (disqualification) caused by the trait">
                                 Risk
                             </th>
                         </tr>
@@ -389,6 +389,7 @@ export function SummaryPanel({ stats }) {
                 <Tile label="Race time" value={summary.raceTime ? fmtClock(summary.raceTime) : "-"} />
                 <Tile label="On-track passes" value={summary.overtakes} />
                 <Tile label="Pit stops" value={summary.stops} />
+                <Tile label="Penalties" value={summary.penalties} />
                 <Tile label="Safety cars" value={summary.counts.sc} />
                 <Tile label="Virtual safety cars" value={summary.counts.vsc} />
                 <Tile label="Red flags" value={summary.counts.red} />
