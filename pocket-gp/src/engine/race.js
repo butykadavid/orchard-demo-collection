@@ -4,9 +4,12 @@ import {
     CLOSE_RATE,
     CRASH_CHAIN,
     CRASH_PER_ATTEMPT,
+    COLLISION_FAULT_ATTACKER,
     CRASH_RANGE_S,
+    DRIVE_THROUGH_UNSERVED_S,
     ERROR_PER_RACE,
     FOLLOW_GAP_S,
+    ILLEGAL_PASS_CHANCE,
     LAP1_INCIDENT_MULT,
     LAP1_OVERTAKE_MIN_RATE,
     LAP1_OVERTAKE_MULT,
@@ -21,7 +24,9 @@ import {
     PASS_CLOSING_SPEED,
     PASS_CORNER_LOSS,
     PASS_TIMEOUT_S,
+    PENALTY_SECONDS,
     PIT_LANE_SPAN,
+    PIT_SPEEDING_PENALTY,
     PIT_TEAM_BUFFER,
     PUNCTURE_SPEED,
     RECOVER_SPEED,
@@ -48,7 +53,18 @@ import { choosePlan, decideBotPit, emergencyTyre, planRestart, tyreName } from "
 import { createControl, redRestartWet, rollRaceControl } from "./control.js";
 import { addDamage, damageLabel, repairTimeFor, rollIncident } from "./incidents.js";
 import { attackBonus, defendBonus, lapNoise, lapTimeFor, lapsTotalFor, overtakeEase, overtakeRate, passFactor, punctureHazard, tyreLoss, wearPerLap } from "./pace.js";
-import { PARTS, errorFactor } from "./parts.js";
+import { PARTS, PART_IDS, errorFactor } from "./parts.js";
+import {
+    SCRUTINEERING_FINDINGS,
+    newPenalty,
+    pendingDriveThrough,
+    pendingTime,
+    penaltyText,
+    rollCollisionPenalty,
+    rollPassPenalty,
+    rollPitSpeeding,
+    scrutineeringRisk,
+} from "./penalties.js";
 import { pitDriveTime, queueWait, rollStopTime } from "./pit.js";
 import { tyreRuleMet, tyreRuleReason } from "./rules.js";
 import { BUCKETS, getTrait, resolveFx, traitNow } from "./traits.js";
@@ -110,7 +126,10 @@ export function createRace({ grid, track, weather, fraction, playerTeam, reverse
         damage: 0, // lap time penalty (s per lap) until repaired in the pits
         recover: 0, // seconds still to spend crawling after a spin or contact
         dnf: null,
-        dsq: null, // disqualified at the flag for breaking the tyre rule: { reason }
+        dsq: null, // disqualified for breaking the tyre rule or failing the scrutineering at the flag, or for a drive-through that was not served (the car retires then): { reason }
+        penalties: [], // time penalties and drive-throughs the car was given, see penalties.js
+        illegalSum: 0, // scrutineering risk of the traits, summed over the distance covered (the average decides the chance of failing the scrutineering)
+        illegalDist: 0, // the distance (laps) it was summed over
         plan: null, // bot race strategy: [{ tyre, laps }]
         stintIdx: 0,
         stintStart: 0, // lap index at which the current stint began
@@ -189,6 +208,7 @@ function pushEvent(race, kind, text) {
 //   passes    expected extra passes made (a trait that hurts passing counts negative)
 //   defended  expected passes kept off the car (negative: extra passes conceded)
 //   errors, fails  expected extra driver errors and part failures the trait caused
+//   illegal   expected extra chance of being disqualified in the scrutineering the trait caused
 // Expected counts come from comparing the pass or incident odds with and without the trait at every step, so they use no random numbers.
 // Every whole unit a count reaches becomes a moment in race.traitLog; incidents the trait contributed to are logged as they happen.
 // ---------------------------------------------------------------------------------------------
@@ -198,7 +218,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const share = (v) => `${Math.round(v * 100)}%`;
 
 function tallyOf(car, id) {
-    return (car.traitTally[id] ??= { pace: 0, passes: 0, defended: 0, errors: 0, fails: 0, logged: {} });
+    return (car.traitTally[id] ??= { pace: 0, passes: 0, defended: 0, errors: 0, fails: 0, illegal: 0, logged: {} });
 }
 
 function traitMoment(race, car, good, text) {
@@ -238,7 +258,7 @@ function creditPass(race, car, ahead, rate, exposure, zone) {
 
 // Seconds gained or lost over this step by traits that change the pace, and the extra incident odds of the traits that make the car error- or failure-prone
 // (errorP and mechP are the odds of this step, traits included)
-function creditStep(car, speed, dt, errorP, mechP, green) {
+function creditStep(car, speed, dt, errorP, mechP, green, lapsTotal) {
     car.setup.traitFx.forEach((t, i) => {
         const now = car.traitNow[i];
         const own = tallyOf(car, t.id);
@@ -249,6 +269,7 @@ function creditStep(car, speed, dt, errorP, mechP, green) {
         }
         if (now.errors) own.errors += (errorP * now.errors) / (1 + car.live.errors);
         if (now.fragile) own.fails += (mechP * now.fragile) / (1 + car.live.fragile);
+        if (now.illegal) own.illegal += (now.illegal * speed * dt) / lapsTotal;
     });
 }
 
@@ -293,12 +314,16 @@ export function requestPit(race, code, tyreId) {
 // Under a red flag the running cars keep the order they had when it came out.
 const group = (c) => (c.dsq ? 3 : c.finished ? 0 : c.dnf ? 2 : 1);
 
+// A disqualified car is ordered by when it crossed the line, or when it was thrown out of the race
+const dsqTime = (c) => c.finishTime ?? c.dnf?.time ?? 0;
+
 function rank(cars, redFlag = false) {
     return cars.slice().sort((a, b) => {
         const ga = group(a);
         const gb = group(b);
         if (ga !== gb) return ga - gb;
-        if (ga === 0 || ga === 3) return a.finishTime - b.finishTime;
+        if (ga === 0) return a.finishTime - b.finishTime;
+        if (ga === 3) return dsqTime(a) - dsqTime(b);
         if (ga === 2) return b.pos - a.pos || b.dnf.time - a.dnf.time;
         return redFlag ? a.redRank - b.redRank : b.pos - a.pos;
     });
@@ -390,14 +415,19 @@ function startPit(race, car, tyre) {
     // The crew works on one car at a time (plus a short buffer), so a team mate arriving during a service has to wait.
     // All times below are seconds since the car turned into the pit lane.
     const repair = repairTimeFor(car.damage);
-    const drive = pitDriveTime(race.track);
+    // A car that speeds in the pit lane gets there a little quicker (it fails to slow down in time) and is given a fixed penalty, whatever it gained
+    const gain = rollPitSpeeding(race.rng);
+    const drive = pitDriveTime(race.track) - gain;
     const arrive = drive / 2; // the box is in the middle of the pit lane
     const wait = queueWait(race, car);
     const start = arrive + wait;
-    const end = start + rollStopTime(race.rng) + repair;
+    // Time penalties that are pending are served together with this stop: the car stands still for that much longer
+    const penalty = pendingTime(car);
+    for (const p of car.penalties) if (p.outcome === null && !p.dt) p.outcome = "served";
+    const end = start + rollStopTime(race.rng) + repair + penalty;
     race.teamBusyUntil.set(car.team, race.clock + end + PIT_TEAM_BUFFER);
     car.pit = { elapsed: 0, laneSpeed: PIT_LANE_SPAN / drive, arrive, start, end, total: end + drive / 2, tyre, swapped: false };
-    car.pitLog.push({ lap: Math.floor(car.pos) + 1, tyre, stand: end - start, red: false });
+    car.pitLog.push({ lap: Math.floor(car.pos) + 1, tyre, stand: end - start - penalty, penalty, red: false });
     car.lapPit = true;
     car.pitRequest = null;
     car.punctured = false;
@@ -408,7 +438,73 @@ function startPit(race, car, tyre) {
     car.trafficLoss = 0;
     car.lossAcc = 0;
     car.jitter = race.rng.int(-1, 2);
-    pushEvent(race, "pit", `${car.code} pits for ${tyreName(tyre).toLowerCase()}s${repair > 0.2 ? " and repairs" : ""}${wait > 0.3 ? ", waiting for the crew" : ""}`);
+    pushEvent(race, "pit", `${car.code} pits for ${tyreName(tyre).toLowerCase()}s${repair > 0.2 ? " and repairs" : ""}${wait > 0.3 ? ", waiting for the crew" : ""}${penalty > 0 ? `, serving a ${penalty} s penalty` : ""}`);
+    if (gain > 0) award(race, car, { seconds: PIT_SPEEDING_PENALTY }, "speeding in the pit lane");
+}
+
+// The car drives through the pit lane without stopping to serve a drive-through penalty: no tyre change, no service
+function startDriveThrough(race, car, owed) {
+    const drive = pitDriveTime(race.track);
+    owed.outcome = "served";
+    car.pit = { elapsed: 0, laneSpeed: PIT_LANE_SPAN / drive, arrive: drive / 2, start: drive / 2, end: drive / 2, total: drive, tyre: null, swapped: true };
+    car.lapPit = true;
+    car.pitRequest = null;
+    pushEvent(race, "penalty", `${car.code} serves a drive-through penalty`);
+}
+
+// A penalty for a car that is still racing. A second drive-through while one is waiting to be served is added as a time penalty instead.
+function award(race, car, p, reason) {
+    if (car.dnf || car.finished) return;
+    if (p.dt && pendingDriveThrough(car)) p = { seconds: PENALTY_SECONDS[1] };
+    car.penalties.push(newPenalty(Math.min(race.lapsTotal, Math.max(0, Math.floor(car.pos)) + 1), reason, p));
+    pushEvent(race, "penalty", `${car.code} gets a ${p.dt ? "drive-through penalty" : `${penaltyText(p)} time penalty`} for ${reason}`);
+}
+
+// What is left of the penalties at the flag is added to the race time
+function settleAtFinish(race, car) {
+    let added = 0;
+    for (const p of car.penalties) {
+        if (p.outcome !== null) continue;
+        p.outcome = "added";
+        added += p.dt ? DRIVE_THROUGH_UNSERVED_S : p.seconds;
+    }
+    if (added <= 0) return;
+    car.finishTime += added;
+    pushEvent(race, "penalty", `${car.code}: ${added} s of penalties added to the race time`);
+}
+
+// Disqualified while the race is still on: the car is out of the race on the spot
+function disqualify(race, car, reason) {
+    car.dsq = { reason };
+    retire(race, car, reason);
+    pushEvent(race, "dnf", `${car.code} is disqualified: ${reason}`);
+}
+
+// After the race every car that is still in it is examined. The chance of failing is small, and larger for a car whose traits push the rules.
+function scrutineer(race) {
+    for (const car of race.cars) {
+        if (car.dnf || car.dsq) continue;
+        const illegal = car.illegalDist > 0 ? car.illegalSum / car.illegalDist : car.live.illegal;
+        if (race.rng.next() >= scrutineeringRisk(illegal)) continue;
+        // what the stewards find: on the part of the trait that carries the most risk, otherwise a part drawn at random
+        let part = null;
+        let worst = 0;
+        car.setup.traitFx.forEach((t) => {
+            const risk = car.traitTally[t.id]?.illegal ?? 0;
+            if (risk > worst) {
+                worst = risk;
+                part = getTrait(t.id)?.part ?? null;
+            }
+        });
+        part ??= PART_IDS[race.rng.int(0, PART_IDS.length)];
+        const reason = SCRUTINEERING_FINDINGS[part] ?? "car is not to the rules";
+        car.dsq = { reason };
+        pushEvent(race, "dnf", `${car.code} is disqualified after the race: ${reason}`);
+        car.setup.traitFx.forEach((t) => {
+            const risk = car.traitTally[t.id]?.illegal ?? 0;
+            if (risk >= 0.005) traitMoment(race, car, false, `${traitName(t.id)}: ${car.code} fails the scrutineering, and the trait made that ${share(risk)} more likely`);
+        });
+    }
 }
 
 function retire(race, car, reason) {
@@ -461,6 +557,13 @@ function crash(race, order, car, ahead) {
     if (incident(race, ahead, "collision", "collision", `${ahead.code} retires after the collision`)) retired++;
     if (caught && incident(race, behind, "caught", "collision", `${behind.code} is caught up and retires`)) retired++;
     callRaceControl(race, "collision", retired);
+    // The stewards look at who caused it: mostly the car that tried the move. The more cars it put out of the race, the heavier the penalty.
+    const culprit = race.rng.next() < COLLISION_FAULT_ATTACKER ? car : ahead;
+    if (!culprit.dnf) {
+        const victimsRetired = [car, ahead, caught ? behind : null].filter((c) => c && c !== culprit && c.dnf).length;
+        const p = rollCollisionPenalty(race.rng, victimsRetired);
+        if (p) award(race, culprit, p, "causing a collision");
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -647,6 +750,7 @@ function updateRaceControl(race) {
 function cancelRace(race) {
     const c = race.control;
     c.phase = "cancelled";
+    scrutineer(race);
     race.order = rank(race.cars, true);
     race.cancelled = { laps: Math.max(1, Math.floor(Math.max(race.order[0].pos, 0))) };
     race.finished = true;
@@ -881,7 +985,9 @@ export function stepRace(race, dt) {
             const advance = speed * dt; // laps covered this step
             const errorP = neutral ? 0 : car.errorRate * (1 + car.live.errors) * (1 + wet / 100) * (chaos(car) ? LAP1_INCIDENT_MULT : 1) * advance;
             const mechP = car.mechRate * (1 + car.live.fragile) * advance;
-            if (car.setup.traitFx.length) creditStep(car, speed, dt, errorP, mechP, !neutral);
+            car.illegalSum += car.live.illegal * advance;
+            car.illegalDist += advance;
+            if (car.setup.traitFx.length) creditStep(car, speed, dt, errorP, mechP, !neutral, lapsTotal);
             const hazard = punctureHazard(car.tyreState);
             if (!car.punctured && hazard > 0 && rng.next() < hazard * advance) {
                 car.punctured = true;
@@ -978,10 +1084,22 @@ export function stepRace(race, dt) {
         if (!car.pit && oldPos >= 0 && crossed(oldPos, newPos, PIT_ENTRY) && Math.floor(newPos) < lapsTotal - 1) {
             if (mode === "red") park = true;
             else {
-                let tyre;
-                if (car.isPlayer) tyre = car.punctured ? (car.pitRequest ?? emergencyTyre(race, car)) : car.pitRequest;
-                else tyre = decideBotPit(car, race, newPos);
-                if (tyre) startPit(race, car, tyre);
+                const owed = pendingDriveThrough(car);
+                if (owed) {
+                    // No stop before the drive-through is served. A bot serves it at the first chance; the player has to ask for it (the box button, or a
+                    // puncture that sends the car in anyway). When the last of the pit entries goes by without it, the car is disqualified.
+                    if (!car.isPlayer || car.punctured || car.pitRequest !== null) startDriveThrough(race, car, owed);
+                    else if (--owed.left <= 0) {
+                        owed.outcome = "dsq";
+                        disqualify(race, car, "did not serve the drive-through penalty");
+                        continue;
+                    }
+                } else {
+                    let tyre;
+                    if (car.isPlayer) tyre = car.punctured ? (car.pitRequest ?? emergencyTyre(race, car)) : car.pitRequest;
+                    else tyre = decideBotPit(car, race, newPos);
+                    if (tyre) startPit(race, car, tyre);
+                }
             }
         }
 
@@ -1026,6 +1144,7 @@ export function stepRace(race, dt) {
                 car.overtakes++;
                 t.overtaken++;
                 pushEvent(race, "overtake", `${car.code} passes ${t.code}`);
+                if (race.rng.next() < ILLEGAL_PASS_CHANCE) award(race, car, rollPassPenalty(race.rng), `an illegal overtake on ${t.code}`);
             }
             if (car.pos >= t.pos + MIN_GAP_S / car.pace) car.pass = null;
         }
@@ -1036,6 +1155,7 @@ export function stepRace(race, dt) {
             car.pos = lapsTotal;
             car.speed = 0;
             car.pit = null;
+            settleAtFinish(race, car);
             if (!tyreRuleMet(car.allTyres)) {
                 car.dsq = { reason: tyreRuleReason };
                 pushEvent(race, "dnf", `${car.code} is disqualified: ${tyreRuleReason}`);
@@ -1051,6 +1171,7 @@ export function stepRace(race, dt) {
     updateRaceControl(race);
     if (race.cars.every((c) => c.finished || c.dnf)) {
         race.finished = true;
+        scrutineer(race);
         race.order = rank(race.cars);
     }
 }

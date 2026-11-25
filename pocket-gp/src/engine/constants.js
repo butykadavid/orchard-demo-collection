@@ -62,6 +62,24 @@ export const LAP1_OVERTAKE_MULT = 4; // multiplier on the pass rate
 export const LAP1_OVERTAKE_MIN_RATE = 0.9; // minimum pass rate per lap (hazard), even without a pace advantage
 export const LAP1_INCIDENT_MULT = 5; // multiplier on collision and driver-error chances
 
+// ---- Penalties and scrutineering ----
+// A time penalty is served as extra standing time at the car's next pit stop (added to the race time at the flag when there is none left).
+// A drive-through has to be served at one of the next DRIVE_THROUGH_ENTRIES pit entries, and no stop is allowed before it is served: the car is
+// disqualified on the spot when the last of those entries goes by.
+export const PENALTY_SECONDS = [5, 10]; // s: the two time penalties
+export const DRIVE_THROUGH_ENTRIES = 3; // pit entries (laps) in which a drive-through has to be served
+export const DRIVE_THROUGH_UNSERVED_S = 20; // s: a drive-through that could not be served before the flag (no pit entry left) is added to the race time as this
+export const COLLISION_FAULT_ATTACKER = 0.75; // chance that the car trying the move, not the car being passed, is judged to have caused a collision
+export const COLLISION_NO_PENALTY = 0.25; // chance that the stewards call a collision a racing incident
+export const COLLISION_SEVERITY_PER_RETIREMENT = 0.3; // how much each car put out of the race by a collision weighs on the severity
+export const PENALTY_SEVERITY = [0.6, 0.9]; // severity (0..1.3) below the first: 5 s, below the second: 10 s, above: drive-through
+export const ILLEGAL_PASS_CHANCE = 0.01; // chance that a pass made on track is an illegal overtake (off the track, forcing a car off)
+export const ILLEGAL_PASS_SHORT = 0.7; // share of the illegal overtakes that are 5 s (the rest 10 s)
+export const PIT_SPEEDING_CHANCE = 0.02; // chance per stop that the car speeds in the pit lane
+export const PIT_SPEEDING_GAIN = [0.1, 0.5]; // s: time a speeding car gains in the pit lane (min, max)
+export const PIT_SPEEDING_PENALTY = 10; // s: the penalty, whatever the car gained
+export const SCRUTINEERING_FAIL = 0.005; // chance that a car fails the scrutineering after the race, before the traits that change it (see live.illegal)
+
 // ---- Race control: safety car, virtual safety car, red flag ----
 export const SC_SPEED = 0.55; // speed behind the safety car as a share of the circuit's reference racing speed (the same for every car)
 export const SC_CATCHUP = 0.75; // cars that are not bunched up yet may run this share of the reference speed (and of their own free speed) to close the gap
@@ -128,6 +146,7 @@ export const AI_UNDERCUT_HORIZON = 8; // laps: how far ahead a bot reckons the r
 export const AI_OUTLAP_LOSS = 1; // s: slow out-lap on fresh tyres
 export const AI_AGGRESSION = [0.7, 1.3]; // per-bot range: scales how readily it takes tactical risks
 export const AI_TRAIT_RISK = 0.2; // bots count the drawbacks of a trait this much (share) lighter than they are: a slightly risk-taking choice of traits
+export const AI_DSQ_VALUE = 300; // race seconds a bot reckons a disqualification costs (a trait that adds 1% to the scrutineering risk is worth 3 s less)
 export const AI_TRAFFIC_RISK = 0.25; // extra risk appetite (share) of a bot that expects to spend the race working through the field
 export const AI_GRID_PUSH = 0.8; // how much more a trait that helps passing is worth (and one that helps defending is worth less) to a bot that has to climb the whole way up the field, and the other way round
 export const AI_GRID_TRAFFIC = 0.5; // share of the race a bot expects to be stuck in traffic beyond the usual when it has to climb as far as it can

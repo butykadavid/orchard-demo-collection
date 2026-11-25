@@ -28,6 +28,7 @@ export function expectedWetness(weather, fraction, lapsTotal) {
 //   grip     share of the tyre wear pace loss that is kept
 //   tough    share of contact damage avoided          quali  s gained on the qualifying lap
 //   errors/fragile  driver error / part failure rate modifier (+0.5 = 50% more)
+//   illegal  percentage points (0.02 = 2%) added to the chance of failing the scrutineering after the race
 //   failRate chance per race of a mechanical failure (always-on traits that make the car fragile already included), failParts its split
 //            over the parts; baseFail the chance without any trait
 //   fixed    the summed effects that never change; traitFx  [{ id, fx, live, lines }] what each trait does at this circuit
