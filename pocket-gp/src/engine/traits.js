@@ -1,4 +1,5 @@
 import {
+    AI_DSQ_VALUE,
     AI_GRID_PUSH,
     AI_GRID_TRAFFIC,
     AI_GRID_VALUE,
@@ -9,6 +10,7 @@ import {
     AI_TRAIT_RISK,
     OVERTAKE_ZONE_SHARE,
     PART_PERF_TIERS,
+    SCRUTINEERING_FAIL,
     TRAIT_FULL_WEIGHT,
     TRAIT_SCALE_MAX,
     TRAIT_SLOTS,
@@ -50,7 +52,7 @@ const more = (v, what) => (v >= 0 ? `${pct(v)} more ${what}` : `${pct(-v)} fewer
 
 // The numbers the race reads. Passing is split by where it happens (see the zone condition): passes anywhere, on the straights
 // and in the braking zones only, and in the corners between them only
-export const BUCKETS = ["pace", "grip", "wear", "attack", "attackZone", "attackCorner", "defend", "defendZone", "defendCorner", "tough", "quali", "errors", "fragile"];
+export const BUCKETS = ["pace", "grip", "wear", "attack", "attackZone", "attackCorner", "defend", "defendZone", "defendCorner", "tough", "quali", "errors", "fragile", "illegal"];
 
 export const zeroFx = () => Object.fromEntries(BUCKETS.map((k) => [k, 0]));
 
@@ -65,6 +67,7 @@ const EVERYWHERE = ["air", "wet", "tyre", "phase", "position", "chaotic", "compo
 //   attack   more passes made (0.2 = 20% higher pass rate)           defend   fewer passes suffered
 //   tough    share of contact damage avoided                         quali    seconds gained on the qualifying lap
 //   errors   more driver errors (bad)                                fragile  more part failures (bad)
+//   illegal  more chance of failing the scrutineering after the race and being disqualified (bad), in percentage points
 // `max` bounds the amount, `pctUnit` says it reads as a percentage, `conditions` lists the conditions that make sense for it,
 // `value` is what a bot thinks an amount is worth in race seconds when it applies all the time, given the context
 // { laps, wet (expected %), tight (0-1) }, `chaoticMult` how much more a chaotic lap counts than an ordinary one
@@ -145,6 +148,15 @@ export const STATS = {
         conditions: EVERYWHERE,
         value: (v) => -10 * v,
         text: (v) => (v >= 0 ? `${pct(v)} more part failures` : `${pct(-v)} fewer part failures`),
+    },
+    illegal: {
+        label: "Scrutineering risk",
+        bad: true,
+        pctUnit: true,
+        max: 0.3,
+        conditions: EVERYWHERE,
+        value: (v) => -AI_DSQ_VALUE * v,
+        text: (v) => (v >= 0 ? `${pct(v)} more risk of disqualification in scrutineering` : `${pct(-v)} less risk of disqualification in scrutineering`),
     },
 };
 
@@ -366,9 +378,9 @@ const DEFAULT_TRAITS = [
         part: "frontWing",
         tier: 3,
         name: "Precision Aero",
-        desc: "A big gain in clean air at circuits hungry for downforce. The big wing drags everywhere, so passing on the straights gets much harder.",
+        desc: "A big gain in clean air at circuits hungry for downforce. The big wing drags everywhere, so passing on the straights gets much harder, and a wing that flexes this much is on the edge of the rules.",
         effects: [fx("pace", 0.3, clean)],
-        drawbacks: [fx("attack", -0.5, straight)],
+        drawbacks: [fx("attack", -0.5, straight), fx("illegal", 0.03)],
     },
     // Rear wing
     {
@@ -394,9 +406,9 @@ const DEFAULT_TRAITS = [
         part: "rearWing",
         tier: 3,
         name: "DRS Hunter",
-        desc: "Gets a big run out of the tow and the open flap on long straights, so it passes far more often there. Set up for the straights, it has little bite in the corners.",
+        desc: "Gets a big run out of the tow and the open flap on long straights, so it passes far more often there. Set up for the straights, it has little bite in the corners, and the flap is pushed to the limit of the rules.",
         effects: [fx("attack", 0.6, straight)],
-        drawbacks: [fx("attack", -0.25, corner)],
+        drawbacks: [fx("attack", -0.25, corner), fx("illegal", 0.02)],
     },
     // Brakes
     {
@@ -475,9 +487,9 @@ const DEFAULT_TRAITS = [
         part: "powertrain",
         tier: 3,
         name: "Launch Control",
-        desc: "A perfect getaway: many more places gained on the first lap and after a standing restart. The clutch and gearbox take a beating.",
+        desc: "A perfect getaway: many more places gained on the first lap and after a standing restart. The clutch and gearbox take a beating, and the launch aids are in a grey area of the rules.",
         effects: [fx("attack", 1.5, chaotic)],
-        drawbacks: [fx("fragile", 0.5)],
+        drawbacks: [fx("fragile", 0.5), fx("illegal", 0.02)],
     },
     // Chassis
     {
@@ -697,6 +709,7 @@ export function resolveFx(total, out = {}) {
     out.quali = total.quali;
     out.errors = Math.max(-0.5, total.errors);
     out.fragile = Math.max(-0.5, total.fragile);
+    out.illegal = Math.max(-SCRUTINEERING_FAIL, total.illegal); // percentage points on top of the base chance, which cannot go below nothing
     return out;
 }
 

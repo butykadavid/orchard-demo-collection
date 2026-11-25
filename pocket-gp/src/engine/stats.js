@@ -61,6 +61,8 @@ export function buildRaceStats(race, standings) {
             stints: buildStints(car, lapsTotal),
             pitLog: car.pitLog,
             lapLog: car.lapLog,
+            penalties: car.penalties,
+            dsq: car.dsq,
         };
     });
 
@@ -105,6 +107,7 @@ export function buildRaceStats(race, standings) {
         counts: race.counts,
         retirements: rows.filter((r) => r.status === "dnf").length,
         disqualified: rows.filter((r) => r.status === "dsq").length,
+        penalties: rows.reduce((n, r) => n + r.penalties.length, 0),
         overtakes: rows.reduce((n, r) => n + r.overtakes, 0),
         stops: rows.reduce((n, r) => n + r.stops, 0),
     };
@@ -133,7 +136,7 @@ function buildTraitStats(race, standings) {
                 pace: tally?.pace ?? 0, // seconds gained (negative: lost) over the race
                 passes: tally?.passes ?? 0, // expected extra passes made
                 defended: tally?.defended ?? 0, // expected passes kept off the car
-                risk: (tally?.errors ?? 0) + (tally?.fails ?? 0), // expected extra errors and breakdowns (a chance, 0.05 = 5%)
+                risk: (tally?.errors ?? 0) + (tally?.fails ?? 0) + (tally?.illegal ?? 0), // expected extra errors, breakdowns and scrutineering failures (a chance, 0.05 = 5%)
             };
         }),
     }));
