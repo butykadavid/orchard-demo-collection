@@ -75,10 +75,10 @@ export const COLLISION_SEVERITY_PER_RETIREMENT = 0.3; // how much each car put o
 export const PENALTY_SEVERITY = [0.6, 0.9]; // severity (0..1.3) below the first: 5 s, below the second: 10 s, above: drive-through
 export const ILLEGAL_PASS_CHANCE = 0.01; // chance that a pass made on track is an illegal overtake (off the track, forcing a car off)
 export const ILLEGAL_PASS_SHORT = 0.7; // share of the illegal overtakes that are 5 s (the rest 10 s)
-export const PIT_SPEEDING_CHANCE = 0.02; // chance per stop that the car speeds in the pit lane
+export const PIT_SPEEDING_CHANCE = 0.002; // chance per stop that the car speeds in the pit lane
 export const PIT_SPEEDING_GAIN = [0.1, 0.5]; // s: time a speeding car gains in the pit lane (min, max)
 export const PIT_SPEEDING_PENALTY = 10; // s: the penalty, whatever the car gained
-export const SCRUTINEERING_FAIL = 0.005; // chance that a car fails the scrutineering after the race, before the traits that change it (see live.illegal)
+export const SCRUTINEERING_FAIL = 0.002; // chance that a car fails the scrutineering after the race, before the traits that change it (see live.illegal)
 
 // ---- Race control: safety car, virtual safety car, red flag ----
 export const SC_SPEED = 0.55; // speed behind the safety car as a share of the circuit's reference racing speed (the same for every car)
